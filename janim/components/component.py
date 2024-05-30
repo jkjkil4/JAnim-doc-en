@@ -2,23 +2,33 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Callable, Self, TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Callable, Generator, Self, overload
 
 import janim.utils.refresh as refresh
+from janim.exception import CmptGroupLookupError
+from janim.utils.data import AlignedData
 
 if TYPE_CHECKING:   # pragma: no cover
     from janim.items.item import Item
 
 
 class _CmptMeta(type):
-    def __new__(cls: type, name: str, bases: tuple[type, ...], attrdict: dict):
-        for key in ('copy', '__eq__'):
-            if not callable(attrdict.get(key, None)):
-                raise AttributeError(f'Component 的每一个子类都必须继承并实现 `{key}` 方法，而 {name} 没有')
+    def __new__(
+        cls: type,
+        name: str,
+        bases: tuple[type, ...],
+        attrdict: dict,
+        *,
+        impl=False,     # 若 impl=True，则会跳过下面的检查
+    ):
+        if not impl:
+            for key in ('copy', 'become', 'not_changed'):
+                if not callable(attrdict.get(key, None)):
+                    raise AttributeError(f'Component 的每一个子类都必须继承并实现 `{key}` 方法，而 {name} 没有')
         return super().__new__(cls, name, bases, attrdict)
 
 
-class Component(refresh.Refreshable, metaclass=_CmptMeta):
+class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
     @dataclass
     class BindInfo:
         '''
@@ -36,11 +46,11 @@ class Component(refresh.Refreshable, metaclass=_CmptMeta):
             class MyCmpt(Component): ...
 
             class MyItem(Item):
-                cmpt1 = CmptInfo(MyCmpt)
-                cmpt2 = CmptInfo(MyCmpt)
+                cmpt1 = CmptInfo(MyCmpt[Self])
+                cmpt2 = CmptInfo(MyCmpt[Self])
 
             class MyItem2(MyItem):
-                cmpt3 = CmptInfo(MyCmpt)
+                cmpt3 = CmptInfo(MyCmpt[Self])
 
             item = MyItem()
 
@@ -52,16 +62,15 @@ class Component(refresh.Refreshable, metaclass=_CmptMeta):
             # item2.cmpt1.bind_info 与 BindInfo(MyItem, item2, 'cmpt1') 一致
             # item2.cmpt3.bind_info 与 BindInfo(MyItem2, item2, 'cmpt3') 一致
         '''
-        decl_cls: type
+        decl_cls: type[Item]
         at_item: Item
         key: str
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-
+    def __init__(self) -> None:
+        super().__init__()
         self.bind: Component.BindInfo | None = None
 
-    def init_bind(self, bind: BindInfo):
+    def init_bind(self, bind: BindInfo) -> None:
         '''
         用于 ``Item._init_components``
 
@@ -69,13 +78,8 @@ class Component(refresh.Refreshable, metaclass=_CmptMeta):
         '''
         self.bind = bind
 
-    def copy(self) -> Self:
-        cmpt_copy = copy.copy(self)
-        cmpt_copy.bind = None
-        cmpt_copy.reset_refresh()
-        return cmpt_copy
-
-    def __eq__(self, other) -> bool: ...
+    def fallback_check(self) -> bool:
+        return self.bind is not None and self.bind.at_item.stored
 
     def mark_refresh(self, func: Callable | str, *, recurse_up=False, recurse_down=False) -> Self:
         '''
@@ -91,11 +95,59 @@ class Component(refresh.Refreshable, metaclass=_CmptMeta):
                 recurse_down=recurse_down
             )
 
-    def get_same_cmpt(self, item: Item) -> Self:
-        if isinstance(item, self.bind.decl_cls):
-            return getattr(item, self.bind.key)
+    def copy(self) -> Self:
+        cmpt_copy = copy.copy(self)
+        # cmpt_copy.bind = None
+        cmpt_copy.reset_refresh()
+        return cmpt_copy
 
-        return getattr(item.astype(self.bind.decl_cls), self.bind.key)
+    def become(self, other) -> Self: ...
+
+    def not_changed(self, other) -> bool: ...
+
+    def get_same_cmpt(self, item: Item) -> Self:
+        return self.get_same_cmpt_if_exists(item) or getattr(item.astype(self.bind.decl_cls), self.bind.key)
+
+    def get_same_cmpt_without_mock(self, item: Item) -> Self | None:
+        return item.components.get(self.bind.key, None)
+
+    def get_same_cmpt_if_exists(self, item: Item) -> Self | None:
+        cmpt = item.components.get(self.bind.key, None)
+        if cmpt is not None:
+            return cmpt
+
+        return item._astype_mock_cmpt.get(self.bind.key, None)
+
+    def walk_same_cmpt_of_self_and_descendants_without_mock(
+        self,
+        root_only: bool = False,
+        *,
+        timed: bool = False
+    ) -> Generator[Self, None, None]:
+        yield self
+        if root_only or self.bind is None:
+            return
+
+        item = self.bind.at_item
+        walk = None
+        if not item.stored:
+            walk = item.walk_descendants(self.bind.decl_cls)
+        elif timed:
+            walk = item._walk_lst(self.bind.decl_cls, item._current_family(up=False))
+
+        if walk is not None:
+            for item in walk:
+                cmpt = self.get_same_cmpt_without_mock(item)
+                if cmpt is None:
+                    continue
+                yield cmpt
+
+    @property
+    def r(self) -> ItemT:
+        '''
+        所位于的物件，便于链式调用同物件下其它的组件
+        '''
+        return self.bind.at_item
 
 
 class CmptInfo[T]:
@@ -111,17 +163,17 @@ class CmptInfo[T]:
             # cmpt1 = MyCmpt()
 
             # Right
-            cmpt1 = CmptInfo(MyCmpt)
+            cmpt1 = CmptInfo(MyCmpt[Self])
 
             # Wrong!
             # cmpt2 = MyCmptWithArgs(1)
 
             # Right
-            cmpt2 = CmptInfo(MyCmptWithArgs, 1)
+            cmpt2 = CmptInfo(MyCmptWithArgs[Self], 1)
     '''
     def __init__(self, cls: type[T], *args, **kwargs):
         self.__doc__ = ""
-        self.cls = cls
+        self.cls = getattr(cls, '__origin__', cls)
         self.args = args
         self.kwargs = kwargs
 
@@ -131,7 +183,6 @@ class CmptInfo[T]:
     # 方便代码补全，没有实际意义
     @overload
     def __get__(self, obj: None, owner) -> Self: ...
-
     @overload
     def __get__(self, obj: object, owner) -> T: ...
 
@@ -148,19 +199,31 @@ class _CmptGroup(Component):
         super().init_bind(bind)
         self._find_objects()
 
-    def copy(self, *, new_cmpts: dict[str, Component]):
+    def copy(self, *, new_cmpts: dict[str, Component]) -> Self:
         cmpt_copy = super().copy()
-        for key in cmpt_copy.objects.keys():
-            cmpt_copy.objects[key] = new_cmpts[key]
+        cmpt_copy.objects = {
+            key: new_cmpts[key]
+            for key in cmpt_copy.objects.keys()
+        }
 
         return cmpt_copy
 
-    def __eq__(self, other: _CmptGroup) -> bool:
-        for key in self.objects.keys():
-            if self.objects[key] != other.objects[key]:
+    def become(self, other) -> Self:    # pragma: no cover
+        return self
+
+    def not_changed(self, other: _CmptGroup) -> bool:
+        for key, obj in self.objects.items():
+            if not obj.not_changed(other.objects[key]):
                 return False
 
         return True
+
+    @classmethod
+    def align(cls, cmpt1: _CmptGroup, cmpt2: _CmptGroup, aligned: AlignedData[Item]):
+        cmpt1_copy = cmpt1.copy(new_cmpts=aligned.data1.components)
+        cmpt2_copy = cmpt2.copy(new_cmpts=aligned.data2.components)
+        cmpt_union = cmpt1.copy(new_cmpts=aligned.union.components)
+        return AlignedData(cmpt1_copy, cmpt2_copy, cmpt_union)
 
     def _find_objects(self) -> None:
         self.objects: dict[str, Component] = {}
@@ -176,9 +239,12 @@ class _CmptGroup(Component):
             if val is cmpt_info:
                 return key
 
-        raise ValueError('CmptGroup 必须要与传入的内容在同一个类的定义中')
+        raise CmptGroupLookupError('CmptGroup 必须要与传入的内容在同一个类的定义中')
 
     def __getattr__(self, name: str):
+        if name == 'objects':
+            raise AttributeError()
+
         objects = []
         methods = []
 
@@ -203,7 +269,7 @@ class _CmptGroup(Component):
                 for method in methods
             ]
 
-            return self if ret == objects else ret
+            return self if all(a is b for a, b in zip(ret, objects)) else ret
 
         return wrapper
 
@@ -217,8 +283,8 @@ def CmptGroup[T](*cmpt_info_list: CmptInfo[T]) -> CmptInfo[T]:
     .. code-block:: python
 
         class MyItem(Item):
-            stroke = CmptInfo(Cmpt_Rgbas)
-            fill = CmptInfo(Cmpt_Rgbas)
+            stroke = CmptInfo(Cmpt_Rgbas[Self])
+            fill = CmptInfo(Cmpt_Rgbas[Self])
             color = CmptGroup(stroke, fill)
 
         item = MyItem()

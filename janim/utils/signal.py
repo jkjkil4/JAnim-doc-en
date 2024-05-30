@@ -144,7 +144,6 @@ class Signal(Generic[T, P, R]):
 
     @overload
     def __get__(self, instance: None, owner) -> Self: ...
-
     @overload
     def __get__(self, instnace: object, owner) -> Callable[P, R]: ...
 
@@ -233,10 +232,9 @@ class Signal(Generic[T, P, R]):
         '''
         触发 ``Signal``
         '''
-        if key not in self.slots:
+        all_slots = self.slots.get(key, None)
+        if all_slots is None:
             return
-
-        all_slots = self.slots[key]
 
         for cls in sender.__class__.mro():
             full_qualname = self._get_cls_full_qualname(cls)
@@ -244,20 +242,6 @@ class Signal(Generic[T, P, R]):
                 continue
 
             slots = all_slots.self_slots_dict[full_qualname]
-
-            # pre-check
-            if slots.self_refresh_slots_with_recurse:
-                from janim.components.component import Component
-                from janim.items.relation import Relation
-
-                if not isinstance(sender, Relation) and not isinstance(sender, Component):
-                    # TODO: i18n
-                    # f'self_refresh_with_recurse() cannot be used in class {sender.__class__},
-                    # it can only be used in Relation and its subclasses'
-                    raise TypeError(
-                        f'self_refresh_with_recurse() 无法在类 {sender.__class__} 中使用，'
-                        '只能在 Relation 和 Component 及子类中使用'
-                    )
 
             # self_normal_slots
             for func in slots.self_normal_slots:

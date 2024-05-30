@@ -1,19 +1,163 @@
 from __future__ import annotations
 
-from typing import Iterable, Callable, TypeVar, Sequence
+import inspect
+from typing import (Callable, Iterable, NoReturn, Self, Sequence, TypeVar,
+                    overload)
 
-from scipy import linalg
 import numpy as np
-import numpy.typing as npt
+from fontTools.cu2qu.cu2qu import curve_to_quadratic
 
+from janim.constants import DEGREES, NAN_POINT, TAU
+from janim.exception import PointError
+from janim.typing import Vect, VectArray
 from janim.utils.simple_functions import choose
-from janim.utils.space_ops import find_intersection
-from janim.utils.space_ops import cross2d
-from janim.utils.space_ops import midpoint
-from janim.logger import log
+from janim.utils.space_ops import (angle_between_vectors, cross, cross2d,
+                                   find_intersection, get_norm, midpoint,
+                                   rotation_between_vectors, z_to_vector)
 
 CLOSED_THRESHOLD = 0.001
 T = TypeVar("T")
+
+
+class PathBuilder:
+    def __init__(
+        self,
+        *,
+        start_point: Vect | None = None,
+        points: VectArray | None = None,
+        use_simple_quadratic_approx: bool = False,
+    ):
+        if start_point is not None and points is not None:
+            raise PointError('不能同时设置 start_point 和 points')
+        if start_point is not None:
+            self.points_list = [[start_point]]
+            self.start_point = start_point
+            self.end_point = start_point
+        elif points is not None:
+            self.points_list = [points]
+            self.start_point = points[0]
+            self.end_point = points[-1]
+        else:
+            self.points_list = []
+            self.start_point = None
+            self.end_point = None
+
+        self.use_simple_quadratic_approx = use_simple_quadratic_approx
+
+    def get(self) -> np.ndarray:
+        if not self.points_list:
+            return np.empty((0, 3))
+        return np.vstack(self.points_list)
+
+    def append(self, points: VectArray, *, line_to_start_point=False) -> Self:
+        if line_to_start_point:
+            self.points_list.append([(np.array(self.end_point) + np.array(points[0])) * 0.5])
+        self.points_list.append(points)
+        if self.start_point is None:
+            self.start_point = points[0]
+        self.end_point = points[-1]
+        return self
+
+    def move_to(self, point: Vect) -> Self:
+        if self.end_point is None:
+            self.points_list.append([point])
+        else:
+            self.points_list.append([NAN_POINT, point])
+        self.start_point = point
+        self.end_point = point
+        return self
+
+    def line_to(self, point: Vect) -> Self:
+        self._raise_if_no_points()
+        mid = (self.end_point + point) / 2
+        self.points_list.append([mid, point])
+        self.end_point = point
+        return self
+
+    def conic_to(self, handle: Vect, point: Vect) -> Self:
+        self._raise_if_no_points()
+        self.points_list.append([handle, point])
+        self.end_point = point
+        return self
+
+    def cubic_to(
+        self,
+        handle1: Vect,
+        handle2: Vect,
+        anchor: Vect
+    ) -> Self:
+        self._raise_if_no_points()
+        if np.isclose(self.end_point, handle1).all():
+            self.conic_to(handle2, anchor)
+            return
+        if np.isclose(handle1, handle2).all():
+            self.conic_to(handle1, anchor)
+            return
+        if np.isclose(handle2, anchor).all():
+            self.conic_to(handle1, handle2)
+            return
+
+        last = self.end_point
+        # Note, this assumes all points are on the xy-plane
+        v1 = handle1 - last
+        v2 = anchor - handle2
+        angle = angle_between_vectors(v1, v2)
+        if self.use_simple_quadratic_approx and angle < 45 * DEGREES:
+            quad_approx = [last, find_intersection(last, v1, anchor, -v2), anchor]
+        else:
+            quad_approx = get_quadratic_approximation_of_cubic(
+                last, handle1, handle2, anchor
+            )
+        self.points_list.append(quad_approx[1:])
+        self.end_point = quad_approx[-1]
+        return self
+
+    def arc_to(self, point: Vect, angle: float, n_components: int | None = None, threshold: float = 1e-3) -> Self:
+        self._raise_if_no_points()
+
+        if abs(angle) < threshold:
+            self.line_to(point)
+            return self
+
+        # Assign default value for n_components
+        if n_components is None:
+            n_components = int(np.ceil(8 * abs(angle) / TAU))
+
+        arc_points = quadratic_bezier_points_for_arc(angle, n_components)
+        target_vect = point - self.end_point
+        curr_vect = arc_points[-1] - arc_points[0]
+
+        arc_points = arc_points @ rotation_between_vectors(curr_vect, target_vect).T
+        arc_points *= get_norm(target_vect) / get_norm(curr_vect)
+        arc_points += (self.end_point - arc_points[0])
+        self.append(arc_points[1:])
+        return self
+
+    def close_path(self) -> Self:
+        self._raise_if_no_points()
+        self.line_to(self.start_point)
+        return self
+
+    def _raise_if_no_points(self) -> None | NoReturn:
+        if self.end_point is None:
+            name = inspect.currentframe().f_back.f_code.co_name
+            raise PointError('PathBuilder 必须在构造时传入 start_point 或 points，'
+                             f'或者以 move_to 为首次调用，否则不能调用 {name}')
+
+
+def quadratic_bezier_points_for_arc(
+    angle: float,
+    start_angle: float = 0,
+    n_components: int = 8
+) -> np.ndarray:
+    '''得到使用二次贝塞尔曲线模拟的圆弧'''
+    n_points = 2 * n_components + 1
+    angles = np.linspace(start_angle, start_angle + angle, n_points)
+    points = np.array([np.cos(angles), np.sin(angles), np.zeros(n_points)]).T
+    # Adjust handles
+    theta = angle / n_components
+    points[1::2] /= np.cos(theta / 2)
+    return points
 
 
 def bezier(
@@ -81,8 +225,13 @@ def partial_quadratic_bezier_points(
 
 # Linear interpolation variants
 
+@overload
+def interpolate(start: T, end: T, alpha: float) -> T: ...
+@overload
+def interpolate(start, end, alpha: np.ndarray) -> np.ndarray: ...
 
-def interpolate(start: T, end: T, alpha: np.ndarray | float) -> T:
+
+def interpolate(start, end, alpha):
     return (1 - alpha) * start + alpha * end
 
 
@@ -152,10 +301,10 @@ def match_interpolate(
     )
 
 
-def get_smooth_quadratic_bezier_handle_points(
+def approx_smooth_quadratic_bezier_handles(
     points: Sequence[np.ndarray]
 ) -> np.ndarray | list[np.ndarray]:
-    """
+    '''
     Figuring out which bezier curves most smoothly connect a sequence of points.
 
     Given three successive points, P0, P1 and P2, you can compute that by defining
@@ -168,7 +317,7 @@ def get_smooth_quadratic_bezier_handle_points(
     for h that would produce a parbola passing through P3, call it smooth_to_right, and
     another that would produce a parabola passing through P0, call it smooth_to_left,
     and use the midpoint between the two.
-    """
+    '''
     if len(points) == 2:
         return midpoint(*points)
     smooth_to_right, smooth_to_left = [
@@ -186,9 +335,49 @@ def get_smooth_quadratic_bezier_handle_points(
     return handles
 
 
+def smooth_quadratic_path(anchors: VectArray) -> np.ndarray:
+    '''
+    Returns a path defining a smooth quadratic bezier spline
+    through anchors.
+    '''
+    if len(anchors) < 2:
+        return anchors
+    elif len(anchors) == 2:
+        return np.array([anchors[0], anchors.mean(1), anchors[2]])
+
+    is_flat = (anchors[:, 2] == 0).all()
+    if not is_flat:
+        normal = cross(anchors[2] - anchors[1], anchors[1] - anchors[0])
+        rot = z_to_vector(normal)
+        anchors = np.dot(anchors, rot)
+        shift = anchors[0, 2]
+        anchors[:, 2] -= shift
+    h1s, h2s = get_smooth_cubic_bezier_handle_points(anchors)
+    quads = [anchors[0, :2]]
+    for cub_bs in zip(anchors[:-1], h1s, h2s, anchors[1:]):
+        # Try to use fontTools curve_to_quadratic
+        new_quads = curve_to_quadratic(
+            [b[:2] for b in cub_bs],
+            max_err=0.1 * get_norm(cub_bs[3] - cub_bs[0])
+        )
+        # Otherwise fall back on home baked solution
+        if new_quads is None or len(new_quads) % 2 == 0:
+            new_quads = get_quadratic_approximation_of_cubic(*cub_bs)[:, :2]
+        quads.extend(new_quads[1:])
+    new_path = np.zeros((len(quads), 3))
+    new_path[:, :2] = quads
+    if not is_flat:
+        new_path[:, 2] += shift
+        new_path = np.dot(new_path, rot.T)
+    return new_path
+
+
 def get_smooth_cubic_bezier_handle_points(
-    points: npt.ArrayLike
+    points: VectArray
 ) -> tuple[np.ndarray, np.ndarray]:
+
+    from scipy import linalg
+
     points = np.array(points)
     num_handles = len(points) - 1
     dim = points.shape[1]
@@ -250,11 +439,11 @@ def diag_to_matrix(
     l_and_u: tuple[int, int],
     diag: np.ndarray
 ) -> np.ndarray:
-    """
+    '''
     Converts array whose rows represent diagonal
     entries of a matrix into the matrix itself.
     See scipy.linalg.solve_banded
-    """
+    '''
     l, u = l_and_u
     dim = diag.shape[1]
     matrix = np.zeros((dim, dim))
@@ -273,10 +462,10 @@ def is_closed(points: Sequence[np.ndarray]) -> bool:
 # Given 4 control points for a cubic bezier curve (or arrays of such)
 # return control points for 2 quadratics (or 2n quadratics) approximating them.
 def get_quadratic_approximation_of_cubic(
-    a0: npt.ArrayLike,
-    h0: npt.ArrayLike,
-    h1: npt.ArrayLike,
-    a1: npt.ArrayLike
+    a0: Vect,
+    h0: Vect,
+    h1: Vect,
+    a1: Vect
 ) -> np.ndarray:
     a0 = np.array(a0, ndmin=2)
     h0 = np.array(h0, ndmin=2)
@@ -335,21 +524,10 @@ def get_quadratic_approximation_of_cubic(
     i1 = find_intersection(a1, T1, mid, Tm)
 
     m, n = np.shape(a0)
-    result = np.zeros((6 * m, n))
-    result[0::6] = a0
-    result[1::6] = i0
-    result[2::6] = mid
-    result[3::6] = mid
-    result[4::6] = i1
-    result[5::6] = a1
+    result = np.zeros((5 * m, n))
+    result[0::5] = a0
+    result[1::5] = i0
+    result[2::5] = mid
+    result[3::5] = i1
+    result[4::5] = a1
     return result
-
-
-def get_smooth_quadratic_bezier_path_through(
-    points: list[np.ndarray]
-) -> np.ndarray:
-    # ?TODO
-    h0, h1 = get_smooth_cubic_bezier_handle_points(points)
-    a0 = points[:-1]
-    a1 = points[1:]
-    return get_quadratic_approximation_of_cubic(a0, h0, h1, a1)

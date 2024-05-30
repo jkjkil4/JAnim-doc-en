@@ -1,5 +1,5 @@
-
 from janim.anims.animation import Animation
+from janim.exception import NotAnimationError
 from janim.utils.rate_functions import RateFunc, linear
 
 
@@ -38,44 +38,86 @@ class AnimGroup(Animation):
         *anims: Animation,
         duration: float | None = None,
         rate_func: RateFunc = linear,
+        _get_anim_objects: bool = True,
         **kwargs
     ):
+        if _get_anim_objects:
+            anims = self._get_anim_objects(anims)
         self.anims = anims
         self.maxt = 0 if not anims else max(anim.local_range.end for anim in anims)
         if duration is None:
             duration = self.maxt
 
         super().__init__(duration=duration, rate_func=rate_func, **kwargs)
+        for anim in self.anims:
+            anim.parent = self
 
-    def set_global_range(self, at: float, duration: float | None = None) -> None:
+    @staticmethod
+    def _get_anim_object(anim) -> Animation:
+        attr = getattr(anim, '__anim__', None)
+        if attr is not None and callable(attr):
+            return attr()
+        return anim
+
+    @staticmethod
+    def _get_anim_objects(anims: list[Animation]) -> list[Animation]:
+        anims = [
+            AnimGroup._get_anim_object(anim)
+            for anim in anims
+        ]
+        for anim in anims:
+            if not isinstance(anim, Animation):
+                raise NotAnimationError('传入了非动画对象，可能是你忘记使用 .anim 了')
+
+        return anims
+
+    def flatten(self) -> list[Animation]:
+        result = [self]
+        for anim in self.anims:
+            if isinstance(anim, AnimGroup):
+                result.extend(anim.flatten())
+            else:
+                result.append(anim)
+
+        return result
+
+    def compute_global_range(self, at: float, duration: float) -> None:
         '''
-        设置并计算子动画的时间范围
+        计算子动画的时间范围
 
-        不需要手动设置，该方法是被 :meth:`~.Timeline.prepare` 调用以计算的
+        该方法是被 :meth:`~.Timeline.prepare` 调用以计算的
         '''
-        super().set_global_range(at, duration)
-
-        if duration is None:
-            duration = self.local_range.duration
+        super().compute_global_range(at, duration)
 
         factor = duration / self.maxt
 
         for anim in self.anims:
-            anim.set_global_range(
+            anim.compute_global_range(
                 self.global_range.at + anim.local_range.at * factor,
                 anim.local_range.duration * factor
             )
+
+    def anim_pre_init(self) -> None:
+        for anim in self.anims:
+            anim.anim_pre_init()
+
+    def anim_init(self) -> None:
+        for anim in self.anims:
+            anim.anim_init()
+
+    def get_anim_t(self, alpha: float, anim: Animation) -> float:
+        return alpha * self.maxt - anim.local_range.at
 
     def anim_on_alpha(self, alpha: float) -> None:
         '''
         在该方法中，:class:`AnimGroup` 通过 ``alpha``
         换算出子动画的 ``local_t`` 并调用子动画的 :meth:`~.Animation.anim_on` 方法
         '''
-        adjusted_local_t = alpha * self.maxt
+        global_t = self.global_t_ctx.get()
 
         for anim in self.anims:
-            anim_t = adjusted_local_t - anim.local_range.at
-            if 0 <= anim_t < anim.local_range.duration:
+            anim_t = self.get_anim_t(alpha, anim)
+            if anim.global_range.at <= global_t < anim.global_range.end:
                 anim.anim_on(anim_t)
 
 
@@ -110,16 +152,19 @@ class Succession(AnimGroup):
         ) # Anim1 在 0~2s 执行，Anim2 在 2.5~4.5s 执行，Anim3 在 5~7s 执行
     '''
     def __init__(self, *anims: Animation, buff: float = 0, **kwargs):
+        anims = self._get_anim_objects(anims)
         end_time = 0
         for anim in anims:
             anim.local_range.at += end_time
             end_time = anim.local_range.end + buff
-        super().__init__(*anims, **kwargs)
+        super().__init__(*anims, _get_anim_objects=False, **kwargs)
 
 
 class Aligned(AnimGroup):
     '''
     动画集合（并列对齐执行）
+
+    也就是忽略了子动画的 ``at`` 和 ``duration``，使所有子动画都一起开始和结束
 
     时间示例：
 
@@ -131,16 +176,23 @@ class Aligned(AnimGroup):
         ) # Anim1 和 Anim2 都在 0~2s 执行
 
         Aligned(
-            Anim1(duration=1),
+            Anim1(at=1, duration=1),
             Anim2(duration=2),
             duration=4
         ) # Anim1 和 Anim2 都在 0~4s 执行
     '''
-    def __init__(*anims: Animation, **kwargs):
-        maxt = max(anim.local_range.end for anim in anims)
-        for anim in anims:
-            factor = anim.local_range.end / maxt
-            anim.local_range.at *= factor
-            anim.local_range.duration *= factor
+    def __init__(self, *anims: Animation, duration: float | None = None, **kwargs):
+        anims = self._get_anim_objects(anims)
+        if duration is None:
+            duration = max(anim.local_range.end for anim in anims)
 
-        super().__init__(*anims, **kwargs)
+        super().__init__(*anims, duration=duration, _get_anim_objects=False, **kwargs)
+
+    def compute_global_range(self, at: float, duration: float) -> None:
+        Animation.compute_global_range(self, at, duration)
+
+        for anim in self.anims:
+            anim.compute_global_range(at, duration)
+
+    def get_anim_t(self, alpha: float, anim: Animation) -> float:
+        return alpha * anim.local_range.duration

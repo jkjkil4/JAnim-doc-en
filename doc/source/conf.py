@@ -6,18 +6,25 @@
 import os
 import sys
 
+from janim import __version__
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'JAnim'
 copyright = '2023, jkjkil4'
 author = 'jkjkil4'
-release = '0.0.1'
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['sphinx.ext.autodoc']
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx_copybutton',
+    'extensions.janim_example_ext',
+    'extensions.code_desc_ext'
+]
 autodoc_member_order = 'bysource'
 # autodoc_default_flags = ['members', 'show-inheritance']
 
@@ -34,8 +41,11 @@ gettext_compact = False     # optional
 html_theme = 'furo'
 html_static_path = ['_static']
 html_css_files = [
-    'custom.css',
-    'colors.css'
+    'layout.css',
+    'colors.css',
+    'custom.css'
 ]
+html_favicon = '_static/favicon.ico'
 
 sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath('.'))

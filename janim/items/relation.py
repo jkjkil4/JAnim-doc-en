@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Callable, Generator, Self
 
 import janim.utils.refresh as refresh
@@ -22,8 +23,8 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         - 不包含调用者自身并且返回的列表中没有重复元素
         - 物件顺序是 DFS 顺序
     '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        super().__init__()
 
         self.parents: list[GRelT] = []
         self.children: list[GRelT] = []
@@ -31,7 +32,7 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
     def mark_refresh(self, func: Callable | str, *, recurse_up=False, recurse_down=False) -> Self:
         super().mark_refresh(func)
 
-        name = func.__name__ if isinstance(func, Callable) else func
+        name = func.__name__ if callable(func) else func
 
         if recurse_up:
             for obj in self.ancestors():
@@ -57,17 +58,22 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         '''
         Relation.children_changed.emit(self)
 
-    def add(self, *objs: GRelT) -> Self:
+    def add(self, *objs: GRelT, insert=False) -> Self:
         '''
         向该对象添加子对象
+
+        如果 ``insert=True`` （默认为 ``False``），那么插入到子物件列表的开头
         '''
-        for obj in objs:
+        for obj in (reversed(objs) if insert else objs):
             # 理论上这里判断 item not in self.children 就够了，但是防止
             # 有被私自修改 self.parents 以及 self.children 的可能，所以这里都判断了
             # Theoretically, checking item not in self.children is enough here, but to prevent
             # possible modifications to self.parents and self.children, both checks are made here.
             if obj not in self.children:
-                self.children.append(obj)
+                if insert:
+                    self.children.insert(0, obj)
+                else:
+                    self.children.append(obj)
             if self not in obj.parents:
                 obj.parents.append(self)
             obj.parents_changed()
@@ -93,6 +99,11 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         self.children_changed()
         return self
 
+    def shuffle(self) -> Self:
+        random.shuffle(self.children)
+        self.children_changed()
+        return self
+
     def clear_parents(self) -> Self:
         for parent in self.parents:
             parent.remove(self)
@@ -107,7 +118,8 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         res = []
 
         for sub_obj in lst:
-            res.append(sub_obj)
+            if sub_obj not in res:
+                res.append(sub_obj)
             res.extend(filter(
                 lambda obj: obj not in res,
                 sub_obj._family(up=up)
@@ -134,7 +146,8 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
     @staticmethod
     def _walk_lst[RelT](base_cls: type[RelT] | None, lst: list[GRelT]) -> Generator[RelT, None, None]:
         if base_cls is None:
-            base_cls = Relation
+            yield from lst
+            return
 
         for obj in lst:
             if isinstance(obj, base_cls):
@@ -143,7 +156,7 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
     def _walk_nearest_family[RelT](
         self: Relation,
         base_cls: type[RelT],
-        fn_family: Callable[[Relation], list[Relation]]
+        fn_family: Callable[[Relation], list[Relation]],
     ) -> Generator[RelT, None, None]:
 
         lst = fn_family(self)[:]
@@ -172,21 +185,21 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         '''
         yield from self._walk_lst(base_cls, self.descendants())
 
-    def walk_self_and_ancestors(self) -> Generator[GRelT, None, None]:
+    def walk_self_and_ancestors(self, root_only=False) -> Generator[GRelT, None, None]:
         '''
         遍历自己以及祖先节点
         '''
         yield self
-        for obj in self.ancestors():
-            yield obj
+        if not root_only:
+            yield from self.ancestors()
 
-    def walk_self_and_descendants(self) -> Generator[GRelT, None, None]:
+    def walk_self_and_descendants(self, root_only=False) -> Generator[GRelT, None, None]:
         '''
         遍历自己以及后代节点
         '''
         yield self
-        for obj in self.descendants():
-            yield obj
+        if not root_only:
+            yield from self.descendants()
 
     def walk_nearest_ancestors[RelT](self, base_cls: type[RelT]) -> Generator[RelT, None, None]:
         '''

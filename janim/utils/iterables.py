@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from typing import Callable, Iterable, Sequence, TypeVar, overload
 
 import numpy as np
@@ -7,15 +8,17 @@ import numpy as np
 T = TypeVar("T")
 S = TypeVar("S")
 
+type ResizeFunc = Callable[[np.ndarray, int], np.ndarray]
 
-def remove_list_redundancies(l: Iterable[T]) -> list[T]:
+
+def remove_list_redundancies(lst: Iterable[T]) -> list[T]:
     """
     Used instead of list(set(l)) to maintain order
     Keeps the last occurrence of each element
     """
     reversed_result = []
     used = set()
-    for x in reversed(l):
+    for x in reversed(lst):
         if x not in used:
             reversed_result.append(x)
             used.add(x)
@@ -93,20 +96,18 @@ def resize_array(nparray: np.ndarray, length: int) -> np.ndarray:
 
 @overload
 def resize_preserving_order(array: np.ndarray, length: int) -> np.ndarray: ...
-
-
 @overload
-def resize_preserving_order[T](array: list[T], length: int, fall_back: Callable = None.__class__) -> list[T]: ...
+def resize_preserving_order[T](array: list[T], length: int, fall_back: Callable = types.NoneType) -> list[T]: ...
 
 
 def resize_preserving_order(
     array: np.ndarray | list[T],
     length: int,
-    fall_back: Callable = None.__class__
+    fall_back: Callable = types.NoneType
 ):
     if isinstance(array, np.ndarray):
         if len(array) == 0:
-            return np.full((length, *array.shape[1:]), fall_back(), dtype=array.dtype)
+            return np.zeros((0, *array.shape[1:]), dtype=array.dtype)
         if len(array) == length:
             return array
         indices = np.arange(length) * len(array) // length
@@ -121,17 +122,62 @@ def resize_preserving_order(
         return [array[idx] for idx in indices]
 
 
+def resize_preserving_order_indice_groups(len1: int, len2: int) -> list[list[int]]:
+    indices = np.arange(len2) * len1 // len2
+    result = []
+    prev = 0
+    current = []
+    for i, indice in enumerate(indices):
+        if prev != indice:
+            prev = indice
+            result.append(current)
+            current = []
+
+        current.append(i)
+
+    result.append(current)
+
+    return result
+
+
+def resize_and_repeatedly_extend(
+    array: np.ndarray,
+    length: int,
+    fall_back: Callable[[int], np.ndarray] = lambda length: np.zeros((length, 3))
+) -> np.ndarray:
+    '''
+    注意：这个函数在 length <= len(array) 时，不会产生 array 的拷贝
+    '''
+    if length == len(array):
+        return array
+
+    if length < len(array):
+        return array[:length]
+
+    elif length > len(array):
+        if len(array) == 0:
+            return fall_back(length)
+
+        # len(array) != 0
+        return np.vstack([
+            array,
+            np.repeat([array[-1]], length - len(array), axis=0)
+        ])
+
+
 def resize_with_interpolation(nparray: np.ndarray, length: int) -> np.ndarray:
+    if not isinstance(nparray, np.ndarray):
+        nparray = np.array(nparray)
     if len(nparray) == length:
         return nparray
     if length == 0:
-        return np.zeros((0, *nparray.shape[1:]), dtype=nparray.dtype)
+        return np.zeros((0, *nparray.shape[1:]))
     cont_indices = np.linspace(0, len(nparray) - 1, length)
-    return np.array([
-        (1 - a) * nparray[lh] + a * nparray[rh]
-        for ci in cont_indices
-        for lh, rh, a in [(int(ci), int(np.ceil(ci)), ci % 1)]
-    ], dtype=nparray.dtype)
+    lh_s = cont_indices.astype(int)
+    rh_s = np.ceil(cont_indices).astype(int)
+    a_s = cont_indices % 1
+    a_s = np.expand_dims(a_s, axis=tuple(range(1, nparray.ndim)))
+    return (1 - a_s) * nparray[lh_s] + a_s * nparray[rh_s]
 
 
 def make_even(

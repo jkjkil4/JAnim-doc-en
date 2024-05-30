@@ -1,3 +1,0 @@
-numpy
-mapbox_earcut
-scipy

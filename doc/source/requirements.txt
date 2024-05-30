@@ -1,6 +1,0 @@
-furo
-
-numpy
-mapbox_earcut
-scipy
-rich
