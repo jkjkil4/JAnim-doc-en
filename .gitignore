@@ -1,5 +1,3 @@
-__pycache__
-
 /*
 !/doc
 !/janim
@@ -11,3 +9,6 @@ __pycache__
 
 !/.gitignore
 !/.readthedocs.yaml
+!/pyproject.toml
+
+__pycache__
