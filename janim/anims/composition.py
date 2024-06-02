@@ -89,6 +89,9 @@ class AnimGroup(Animation):
         '''
         super().compute_global_range(at, duration)
 
+        if not self.anims:
+            return
+
         factor = duration / self.maxt
 
         for anim in self.anims:

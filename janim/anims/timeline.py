@@ -203,7 +203,7 @@ class Timeline(metaclass=ABCMeta):
             self.construct()
 
             if self.current_time == 0:
-                self.forward(DEFAULT_DURATION)  # 使得没有任何前进时，产生一点时间，避免除零以及其它问题
+                self.forward(DEFAULT_DURATION, _record_lineno=False)    # 使得没有任何前进时，产生一点时间，避免除零以及其它问题
                 if not quiet:   # pragma: no cover
                     log.info(f'"{self.__class__.__name__}" 构建后没有产生时长，自动产生了 {DEFAULT_DURATION}s 的时长')
             self.cleanup_display()
@@ -222,14 +222,13 @@ class Timeline(metaclass=ABCMeta):
         会在进度达到 ``at`` 时，对 ``func`` 进行调用，
         可传入 ``*args`` 和 ``**kwargs``
         '''
-        rough_at = round(at, 4)   # 防止因为精度误差使得本来计划更迟的任务被更早地执行了
+        rough_at = math.ceil(at * 1e4) / 1e4    # 防止因为精度误差使得本来计划更迟的任务被更早地执行了
         task = Timeline.ScheduledTask(rough_at, func, args, kwargs)
         insort(self.scheduled_tasks, task, key=lambda x: x.at)
-        task.at = at
 
     # region progress
 
-    def forward(self, dt: float = 1, *, _detect_changes=True) -> None:
+    def forward(self, dt: float = 1, *, _detect_changes=True, _record_lineno=True) -> None:
         '''
         向前推进 ``dt`` 秒
         '''
@@ -248,12 +247,13 @@ class Timeline(metaclass=ABCMeta):
 
         self.current_time = to_time
 
-        self.times_of_code.append(
-            Timeline.TimeOfCode(
-                self.current_time,
-                self.get_construct_lineno() or -1
+        if _record_lineno:
+            self.times_of_code.append(
+                Timeline.TimeOfCode(
+                    self.current_time,
+                    self.get_construct_lineno() or -1
+                )
             )
-        )
 
     def forward_to(self, t: float, *, _detect_changes=True) -> None:
         '''
@@ -796,7 +796,7 @@ class TimelineAnim(AnimGroup):
                 set_global_uniforms(
                     ctx,
                     ('JA_VIEW_MATRIX', camera_info.view_matrix.T.flatten()),
-                    ('JA_DISTANCE_FROM_PLANE', camera_info.distance_from_plane),
+                    ('JA_FIXED_DIST_FROM_PLANE', camera_info.fixed_distance_from_plane),
                     ('JA_PROJ_MATRIX', camera_info.proj_matrix.T.flatten()),
                     ('JA_FRAME_RADIUS', camera_info.frame_radius),
                     ('JA_ANTI_ALIAS_RADIUS', anti_alias_radius)

@@ -182,8 +182,8 @@ class TimelineView(QWidget):
         clip_begin = info.clip_range.at
         clip_end = info.clip_range.end
         if near is not None:
-            clip_begin = max(clip_begin, near - info.range.at - 4)
-            clip_end = min(clip_end, near - info.range.at + 4)
+            clip_begin = max(clip_begin, near - info.range.at + info.clip_range.at - 4)
+            clip_end = min(clip_end, near - info.range.at + info.clip_range.at + 4)
 
         range_begin = info.range.at + (clip_begin - info.clip_range.at)
         range_end = range_begin + (clip_end - clip_begin)
@@ -593,6 +593,7 @@ class TimelineView(QWidget):
         # 绘制视野区域指示（底部的长条）
         left = self.range.at / self.anim.global_range.duration * self.width()
         width = self.range.duration / self.anim.global_range.duration * self.width()
+        width = max(width, self.range_tip_height)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(77, 102, 132))
         p.drawRoundedRect(
