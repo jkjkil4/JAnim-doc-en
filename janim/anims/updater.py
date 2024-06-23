@@ -20,7 +20,7 @@ class UpdaterParams:
     '''
     ``Updater`` 调用时会传递的参数，用于标注时间信息以及动画进度
     '''
-    updater: DataUpdater | ItemUpdater
+    updater: DataUpdater | GroupUpdater | ItemUpdater
     global_t: float
     alpha: float
     range: TimeRange
@@ -37,6 +37,7 @@ class UpdaterParams:
 updater_params_ctx: ContextVar[UpdaterParams] = ContextVar('updater_params_ctx')
 
 type DataUpdaterFn[T] = Callable[[T, UpdaterParams], Any]
+type GroupUpdaterFn[T] = Callable[[T, UpdaterParams], Any]
 
 
 class DataUpdater[T: Item](Animation):
@@ -118,6 +119,9 @@ class DataUpdater[T: Item](Animation):
         '''
         def wrapper(global_t: float) -> Item:
             alpha = self.get_alpha_on_global_t(global_t)
+            if updater_data.alpha_on == alpha:
+                return updater_data.data.store()
+
             data_copy = updater_data.orig_data.store()
 
             with UpdaterParams(self,
@@ -206,6 +210,118 @@ class DataUpdater[T: Item](Animation):
         value = alpha * full_length
         lower = index * lag_ratio
         return clip((value - lower), 0, 1)
+
+
+class GroupUpdater[T: Item](Animation):
+    '''
+    以时间为参数对一组物件的数据进行修改
+    '''
+    label_color = C_LABEL_ANIM_ABSTRACT
+
+    def __init__(
+        self,
+        item: T,
+        func: GroupUpdaterFn[T],
+        *,
+        hide_at_begin: bool = True,
+        show_at_end: bool = True,
+        become_at_end: bool = True,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.item = item
+        self.func = func
+        self.hide_at_begin = hide_at_begin
+        self.show_at_end = show_at_end
+        self.become_at_end = become_at_end
+
+        self.post_updaters: list[GroupUpdaterFn[T]] = []
+
+        for subitem in item.walk_self_and_descendants():
+            self.timeline.track(subitem)
+
+    def add_post_updater(self, updater: GroupUpdaterFn[T]) -> Self:
+        self.post_updaters.append(updater)
+        return self
+
+    def call(self, data: T, p: UpdaterParams) -> None:
+        self.func(data, p)
+        for updater in self.post_updaters:
+            updater(data, p)
+
+    def wrap_dynamic(self, idx: int) -> DynamicItem:
+        def wrapper(global_t: float) -> Item:
+            alpha = self.get_alpha_on_global_t(global_t)
+
+            if self.alpha_on == alpha:
+                if idx == 0:
+                    return self.item_copy.store()
+                return self.item_copy.descendants()[idx - 1].store()
+
+            item_copy = self.item_orig.copy()
+
+            with UpdaterParams(self,
+                               global_t,
+                               alpha,
+                               self.global_range,
+                               None) as params:
+                self.call(item_copy, params)
+
+            if idx == 0:
+                return item_copy
+            return item_copy.descendants()[idx - 1]
+
+        return wrapper
+
+    def anim_init(self) -> None:
+        self.item_orig = self.item.copy(as_time=self.global_range.at, skip_dynamic=True)
+
+        self.item_copy = self.item_orig.copy()
+        self.alpha_on: float | None = None
+
+        if self.become_at_end:
+            with UpdaterParams(self,
+                               self.global_range.end,
+                               1,
+                               self.global_range,
+                               None) as params:
+                self.call(self.item, params)
+
+        # 这里假定 self.item 的后代物件结构未发生改变
+        for i, item in enumerate(self.item.walk_self_and_descendants()):
+            self.timeline.register_dynamic(item,
+                                           self.wrap_dynamic(i),
+                                           item.store() if self.become_at_end else None,
+                                           self.global_range.at,
+                                           self.global_range.end - ANIM_END_DELTA,
+                                           not self.become_at_end)
+
+        self.set_render_call_list([
+            RenderCall(
+                subitem.depth,
+                subitem.render
+            )
+            for subitem in self.item_copy.walk_self_and_descendants()
+        ])
+
+        # 在动画开始时自动隐藏，在动画结束时自动显示
+        # 可以将 ``hide_on_begin`` 和 ``show_on_end`` 置为 ``False`` 以禁用
+        if self.hide_at_begin:
+            self.timeline.schedule(self.global_range.at, self.item.hide)
+        if self.show_at_end:
+            self.timeline.schedule(self.global_range.end, self.item.show)
+
+    def anim_on_alpha(self, alpha: float) -> None:
+        global_t = self.global_t_ctx.get()
+        self.item_copy.become(self.item_orig)
+        self.alpha_on = alpha
+
+        with UpdaterParams(self,
+                           global_t,
+                           alpha,
+                           self.global_range,
+                           None) as params:
+            self.call(self.item_copy, params)
 
 
 # TODO: optimize
