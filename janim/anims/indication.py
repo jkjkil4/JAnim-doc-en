@@ -57,7 +57,9 @@ class FocusOn(DataUpdater[Dot]):
             data.interpolate(data, dot2, p.alpha)
 
         super().__init__(dot1, updater, duration=duration, **kwargs)
-        self.timeline.track(dot1)
+
+        if isinstance(point_or_item, Item):
+            self.timeline.track(point_or_item)
 
 
 class Indicate(DataUpdater):
@@ -142,6 +144,8 @@ class CircleIndicate(DataUpdater[Circle]):
             **kwargs
         )
 
+        self.timeline.track(item)
+
 
 class ShowPassingFlash(ShowPartial):
     '''
@@ -225,6 +229,8 @@ class AnimationOnSurroundingRect(AnimGroup):
 
         super().__init__(anim)
 
+        self.timeline.track(item)
+
     def create_rect(self) -> SurroundingRect:
         rect = SurroundingRect(
             self.item,
@@ -304,6 +310,9 @@ class Flash(ShowCreationThenDestruction):
             rate_func=rate_func,
             **kwargs
         )
+
+        if isinstance(point_or_item, Item):
+            self.timeline.track(point_or_item)
 
         def updater(data: Points, p: UpdaterParams):
             if not isinstance(point_or_item, Points):
