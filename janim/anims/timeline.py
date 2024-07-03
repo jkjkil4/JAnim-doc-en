@@ -317,6 +317,7 @@ class Timeline(metaclass=ABCMeta):
 
         - ``at_previous_frame`` 控制是在前一帧暂停（默认）还是在当前帧暂停
         - ``offset`` 表示偏移多少秒，例如 ``offset=2`` 则是当前位置 2s 后
+        - 在 GUI 界面中，可以使用 ``Ctrl+Z`` 快速移动到前一个暂停点，``Ctrl+C`` 快速移动到后一个
         '''
         self.pause_points.append(Timeline.PausePoint(self.current_time + offset, at_previous_frame))
 
@@ -620,6 +621,13 @@ class Timeline(metaclass=ABCMeta):
         使得 ``item`` 在每次 ``forward`` 和 ``play`` 时都会被自动调用 :meth:`~.Item.detect_change`
         '''
         self.items_history[item]
+
+    def track_item_and_descendants(self, item: Item, *, root_only: bool = False) -> None:
+        '''
+        相当于对 ``item`` 及其所有的后代物件调用 :meth:`track`
+        '''
+        for subitem in item.walk_self_and_descendants(root_only):
+            self.items_history[subitem]
 
     def detect_changes_of_all(self) -> None:
         '''
