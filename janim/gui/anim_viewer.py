@@ -18,17 +18,20 @@ import os
 import time
 import traceback
 from bisect import bisect_left
+from typing import Sequence
 
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QHideEvent, QIcon, QShowEvent
-from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QLineEdit,
-                               QMainWindow, QMessageBox, QPushButton,
-                               QSizePolicy, QSplitter, QStackedLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCompleter, QFileDialog, QLabel,
+                               QLineEdit, QMainWindow, QMessageBox,
+                               QPushButton, QSizePolicy, QSplitter,
+                               QStackedLayout, QWidget)
 
 from janim.anims.timeline import Timeline, TimelineAnim
 from janim.exception import ExitException
 from janim.gui.application import Application
 from janim.gui.audio_player import AudioPlayer
+from janim.gui.color_widget import ColorWidget
 from janim.gui.fixed_ratio_widget import FixedRatioWidget
 from janim.gui.font_table import FontTable
 from janim.gui.glwidget import GLWidget
@@ -55,8 +58,10 @@ class AnimViewer(QMainWindow):
     def __init__(
         self,
         anim: TimelineAnim,
+        *,
         auto_play: bool = True,
         interact: bool = False,
+        available_timeline_names: Sequence[str] | None = None,
         parent: QWidget | None = None
     ):
         super().__init__(parent)
@@ -79,8 +84,11 @@ class AnimViewer(QMainWindow):
         if auto_play:
             self.switch_play_state()
 
+        if available_timeline_names is not None:
+            self.update_completer(available_timeline_names)
+
     @classmethod
-    def views(cls, anim: TimelineAnim) -> None:
+    def views(cls, anim: TimelineAnim, **kwargs) -> None:
         '''
         直接显示一个浏览构建完成的时间轴动画的窗口
         '''
@@ -88,7 +96,7 @@ class AnimViewer(QMainWindow):
         if app is None:
             app = Application()
 
-        w = cls(anim)
+        w = cls(anim, **kwargs)
         w.show()
 
         app.exec()
@@ -173,6 +181,10 @@ class AnimViewer(QMainWindow):
         self.action_font_table.setShortcut('Ctrl+F')
         self.font_table: FontTable | None = None
 
+        self.action_color_widget = menu_functions.addAction(_('Color'))
+        self.action_color_widget.setShortcut('Ctrl+O')
+        self.color_widget: ColorWidget | None = None
+
     def setup_status_bar(self) -> None:
         self.fps_label = QLabel()
         self.time_label = QLabel()
@@ -255,6 +267,9 @@ class AnimViewer(QMainWindow):
 
         self.setGeometry(geometry)
 
+    def update_completer(self, completions: Sequence[str]) -> None:
+        self.name_edit.setCompleter(QCompleter(completions))
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if not self.moved_to_position:
@@ -299,6 +314,7 @@ class AnimViewer(QMainWindow):
         self.action_select.triggered.connect(self.on_select_triggered)
         self.action_richtext_edit.triggered.connect(self.on_richtext_edit_triggered)
         self.action_font_table.triggered.connect(self.on_font_table_triggered)
+        self.action_color_widget.triggered.connect(self.on_color_widget_triggered)
 
         self.timeline_view.value_changed.connect(self.on_value_changed)
         self.timeline_view.dragged.connect(lambda: self.set_play_state(False))
@@ -327,7 +343,7 @@ class AnimViewer(QMainWindow):
 
         loader = importlib.machinery.SourceFileLoader(module.__name__, module.__file__)
         module = loader.load_module()
-        timeline_class: type[Timeline] = getattr(module, name, None)
+        timeline_class = getattr(module, name, None)
         if not isinstance(timeline_class, type) or not issubclass(timeline_class, Timeline):
             log.error(
                 _('No timeline named "{name}" in "{file}"')
@@ -345,6 +361,14 @@ class AnimViewer(QMainWindow):
 
         range = self.timeline_view.range
         self.set_anim(anim)
+
+        import gc
+
+        from janim.cli import get_all_timelines_from_module
+
+        gc.collect()
+        get_all_timelines_from_module.cache_clear()
+        self.update_completer([timeline.__name__ for timeline in get_all_timelines_from_module(module)])
 
         if not stay_same:
             self.anim.anim_on(0)
@@ -411,6 +435,17 @@ class AnimViewer(QMainWindow):
 
     def on_font_table_destroyed(self) -> None:
         self.font_table = None
+
+    def on_color_widget_triggered(self) -> None:
+        if self.color_widget is None:
+            self.color_widget = ColorWidget(self)
+            self.color_widget.setWindowFlag(Qt.WindowType.Tool)
+            self.color_widget.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self.color_widget.destroyed.connect(self.on_color_widget_destroyed)
+        self.color_widget.show()
+
+    def on_color_widget_destroyed(self) -> None:
+        self.color_widget = None
 
     # endregion (slots-menu)
 

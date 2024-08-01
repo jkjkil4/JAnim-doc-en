@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import types
+import itertools as it
 from collections import defaultdict
-from typing import Self
+from typing import Self, Iterable, Generator
 
 from janim.anims.animation import Animation, RenderCall
+from janim.anims.composition import AnimGroup
 from janim.components.component import Component
 from janim.constants import ANIM_END_DELTA, OUT, C_LABEL_ANIM_STAY
 from janim.items.item import DynamicItem, Item
@@ -149,6 +152,128 @@ class Transform(Animation):
         '''
         for aligned in self.aligned.values():
             aligned.union.interpolate(aligned.data1, aligned.data2, alpha, path_func=self.path_func)
+
+
+class TransformInSegments(AnimGroup):
+    '''
+    依照切片列表进行 ``src`` 与 ``target`` 之间的变换
+
+    - **基本用法**
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0,3], [5,7]],
+                            b, [[1,3], [5,7]])
+
+      相当于
+
+      .. code-block:: python
+
+        AnimGroup(Transform(a[0:3], b[1:3]),
+                  Transform(a[5:7], b[5:7]))
+
+    - **省略变换目标的切片**
+
+      使用 ``...`` 表示与变换来源的切片相同
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0,3], [5,7]],
+                            b, ...)
+
+      相当于
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0,3], [5,7]],
+                            b, [[0,3], [5,7]])
+
+    - **连续切片**
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0,3], [5,7,9]],
+                            b, [[1,3], [4,7], [10,14]])
+
+      相当于
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0,3], [5,7], [7,9]],
+                            b, [[1,3], [4,7], [10,14]])
+
+    - **连续切片简写**
+
+      如果总共只有一个连续切片，可以省略一层嵌套
+
+      .. code-block:: python
+
+        TransformInSegments(a, [0, 4, 6, 8],
+                            b, ...)
+
+      相当于
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[0, 4, 6, 8]],
+                            b, ...)
+
+    - **连续切片倒序**
+
+      倒过来写即可使切片倒序
+
+      .. code-block:: python
+
+        TransformInSegments(a, [8, 6, 4, 0],
+                            b, ...)
+
+      相当于
+
+      .. code-block:: python
+
+        TransformInSegments(a, [[6,8], [4,6], [0,4]],
+                            b, ...)
+
+      请留意 Python 切片中左闭右开的原则，对于倒序序列 ``[8, 6, 4, 0]`` 来说则是左开右闭
+    '''
+    def __init__(
+        self,
+        src: Item,
+        src_segments: Iterable[Iterable[int]] | Iterable[int],
+        target: Item,
+        target_segments: Iterable[Iterable[int]] | Iterable[int] | types.EllipsisType,
+        *,
+        trs_kwargs: dict = {},
+        **kwargs
+    ):
+        anims = [
+            Transform(src[l1:r1], target[l2:r2], **trs_kwargs)
+            for (l1, r1), (l2, r2) in self.parse_segments(src_segments, target_segments)
+        ]
+        super().__init__(*anims, **kwargs)
+
+    @staticmethod
+    def parse_segments(src_segs, target_segs):
+        if target_segs is ...:
+            target_segs = src_segs
+        return zip(
+            TransformInSegments.parse_segment(src_segs),
+            TransformInSegments.parse_segment(target_segs),
+            strict=True
+        )
+
+    @staticmethod
+    def parse_segment(segs: Iterable[Iterable[int]] | Iterable[int]) -> Generator[tuple[int, int], None, None]:
+        '''
+        ``[[a, b, c], [d, e]]`` -> ``[[a, b], [b, c], [d, e]]``
+        '''
+        assert len(segs) > 0
+        if not isinstance(segs[0], Iterable):
+            segs = [segs]
+
+        for seg in segs:
+            for a, b in it.pairwise(seg):
+                yield (min(a, b), max(a, b))
 
 
 class MethodTransform(Transform):
