@@ -7,6 +7,7 @@ import subprocess as sp
 from typing import Generator, Iterable, Self
 
 import numpy as np
+import numpy.typing as npt
 
 from janim.exception import EXITCODE_FFMPEG_NOT_FOUND, ExitException
 from janim.logger import log
@@ -28,18 +29,24 @@ class Audio:
 
     audio_cache_map: dict[tuple, tuple[np.ndarray, int, str, str]] = {}
 
-    def __init__(self, file_path: str, begin: float = -1, end: float = -1, **kwargs):
+    def __init__(self, file_path: str = '', begin: float = -1, end: float = -1, **kwargs):
         super().__init__(**kwargs)
         self._samples = Array(dtype=np.int16)
         self.framerate = 0
         self.file_path = ''
         self.filename = ''
-        self.read(file_path, begin, end)
+        if file_path:
+            self.read(file_path, begin, end)
+        else:
+            self.framerate = Config.get.audio_framerate
 
     def copy(self) -> Self:
         copy_audio = copy.copy(self)
         copy_audio._samples = self._samples.copy()
         return copy_audio
+
+    def set_samples(self, data: npt.ArrayLike) -> None:
+        self._samples.data = data
 
     def read(
         self,
@@ -84,11 +91,13 @@ class Audio:
         if end != -1:
             command += ['-to', str(end)]    # clip to
 
+        channels = Config.get.audio_channels
+
         command += [
             '-f', 's16le',
             '-acodec', 'pcm_s16le',
             '-ar', str(Config.get.audio_framerate),     # framerate & samplerate
-            '-ac', '1',
+            '-ac', str(channels),
             '-loglevel', 'error',
             '-',    # output to a pipe
         ]
@@ -102,6 +111,9 @@ class Audio:
         except FileNotFoundError:
             log.error(_('Unable to read audio, please install ffmpeg and add it to the environment variables'))
             raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
+
+        if channels != 1:
+            data = data.reshape((-1, channels))
 
         self._samples.data = data
         self.framerate = Config.get.audio_framerate
@@ -161,10 +173,14 @@ class Audio:
         应用 ``duration`` 秒的淡入
         '''
         frames = int(self.framerate * duration)
-        data = self._samples.data
-        data[:frames] = (data[:frames] * np.linspace(0, 1, frames)).astype(np.int16)
-        self._samples.data = data
+        data = self._samples.data.copy()
 
+        mul = np.linspace(0, 1, frames)
+        if data.ndim != 1:
+            mul = mul[:, np.newaxis] * np.ones(data.shape[1])
+
+        data[:frames] = (data[:frames] * mul).astype(np.int16)
+        self._samples.data = data
         return self
 
     def fade_out(self, duration: float) -> Self:
@@ -172,9 +188,15 @@ class Audio:
         应用 ``duration`` 秒的淡出
         '''
         frames = int(self.framerate * duration)
-        data = self._samples.data
-        data[-frames:] = (data[-frames:] * np.linspace(1, 0, frames)).astype(np.int16)
+        data = self._samples.data.copy()
+
+        mul = np.linspace(1, 0, frames)
+        if data.ndim != 1:
+            mul = mul[:, np.newaxis] * np.ones(data.shape[1])
+
+        data[-frames:] = (data[-frames:] * mul).astype(np.int16)
         self._samples.data = data
+        return self
 
     def recommended_ranges(
         self,
@@ -192,6 +214,8 @@ class Audio:
         - ``gap_duration``: 如果没声音的时长大于该时间，则将前后分段
         '''
         data = self._samples.data
+        if data.ndim > 1:
+            data = np.max(data, axis=1)
         indices = np.where(data > np.iinfo(np.int16).max * amplitude_threshold_ratio)[0]
         if len(indices) == 0:
             return
@@ -222,6 +246,8 @@ class Audio:
         '''
         # TODO: cache
         data = self._samples.data
+        if data.ndim > 1:
+            data = np.max(data, axis=1)
         indices = np.where(data > np.iinfo(np.int16).max * amplitude_threshold_ratio)[0]
         if len(indices) == 0:
             return None

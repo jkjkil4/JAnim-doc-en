@@ -11,6 +11,7 @@ from janim.constants import *
 from janim.exception import PointError
 from janim.utils.iterables import adjacent_pairs
 from janim.utils.simple_functions import clip
+from janim.typing import Vect, VectArray
 
 
 def cross(v1: np.ndarray, v2: np.ndarray) -> list[np.ndarray]:
@@ -271,10 +272,10 @@ def find_intersection(
     For 3d values, it returns the point on the ray p0 + v0 * t closest to the
     ray p1 + v1 * t
     """
-    p0 = np.array(p0, ndmin=2)
-    v0 = np.array(v0, ndmin=2)
-    p1 = np.array(p1, ndmin=2)
-    v1 = np.array(v1, ndmin=2)
+    p0 = np.array(p0, ndmin=2, dtype=float)
+    v0 = np.array(v0, ndmin=2, dtype=float)
+    p1 = np.array(p1, ndmin=2, dtype=float)
+    v1 = np.array(v1, ndmin=2, dtype=float)
     m, n = np.shape(p0)
     assert n in [2, 3]
 

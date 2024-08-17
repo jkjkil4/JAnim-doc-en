@@ -99,6 +99,7 @@ class Config(metaclass=_ConfigMeta):
     subtitle_font: str | Iterable[str] = None
 
     audio_framerate: int = None
+    audio_channels: int = None
 
     wnd_pos: str = None
     wnd_monitor: int = None
@@ -106,6 +107,7 @@ class Config(metaclass=_ConfigMeta):
     typst_bin: str = None
 
     ffmpeg_bin: str = None
+    ffprobe_bin: str = None
     output_dir: str = None
     temp_dir: str = None
     asset_dir: str | list[str] = None
@@ -139,6 +141,7 @@ default_config = Config(
     subtitle_font='',
 
     audio_framerate=44100,
+    audio_channels=1,
 
     wnd_pos='OR',
     wnd_monitor=0,
@@ -146,6 +149,7 @@ default_config = Config(
     typst_bin='typst',
 
     ffmpeg_bin='ffmpeg',
+    ffprobe_bin='ffprobe',
     output_dir='videos',
     temp_dir=os.path.join(tempfile.gettempdir(), 'janim'),
     asset_dir=''
@@ -159,7 +163,14 @@ default_config = Config(
 - ``temp_dir`` 由操作系统决定
 '''
 
-config_ctx_var.set([default_config])
+cli_config = Config()
+'''
+命令行配置
+
+会被命令行 ``--config`` 参数自动修改
+'''
+
+config_ctx_var.set([default_config, cli_config])
 
 
 class ConfigGetter:
