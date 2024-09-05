@@ -3,20 +3,21 @@ from __future__ import annotations
 import copy
 import inspect
 import itertools as it
+import types
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Self, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Self, overload
 
 from janim.components.component import CmptInfo, Component, _CmptGroup
 from janim.components.depth import Cmpt_Depth
-from janim.exception import AsTypeError, CopyError
+from janim.exception import AsTypeError, CopyError, GetItemError
 from janim.items.relation import Relation
+from janim.locale.i18n import get_local_strings
 from janim.logger import log
 from janim.render.base import Renderer
 from janim.typing import SupportsApartAlpha, SupportsInterpolate
 from janim.utils.data import AlignedData
 from janim.utils.iterables import resize_preserving_order
 from janim.utils.paths import PathFunc, straight_path
-from janim.locale.i18n import get_local_strings
 
 if TYPE_CHECKING:
     from janim.items.points import Group
@@ -28,6 +29,7 @@ type DynamicItem = Callable[[float], Item]
 CLS_CMPTINFO_NAME = '__cls_cmptinfo'
 CLS_STYLES_NAME = '__cls_styles'
 ALL_STYLES_NAME = '__all_styles'
+MOCKABLE_NAME = '__mockable'
 
 
 class _ItemMeta(type):
@@ -67,7 +69,27 @@ class _ItemMeta(type):
         return super().__new__(cls, name, bases, attrdict)
 
 
+def mockable(func):
+    '''
+    使得 ``.astype`` 后可以调用被 ``@mockable`` 修饰的方法
+    '''
+    setattr(func, MOCKABLE_NAME, True)
+    return func
+
+
 class Item(Relation['Item'], metaclass=_ItemMeta):
+    '''
+    :class:`~.Item` 是物件的基类
+
+    除了使用 ``item[0]`` ``item[1]`` 进行下标索引外，还可以使用列表索引和布尔索引
+
+    - 列表索引，例如 ``item[0, 1, 3]``, 即 ``Group(item[0], item[1], item[3])``
+
+    - 布尔索引，例如 ``item[False, True, False, True, True]`` 表示取出 ``Group(item[1], item[3], item[4])``，
+
+      也就是将那些为 True 的位置取出组成一个 :class:`~.Group`
+    '''
+
     renderer_cls = Renderer
     '''
     覆盖该值以在子类中使用特定的渲染器
@@ -183,7 +205,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
     def digest_styles(self, **styles):
         '''
-        设置物件以及子物件的样式
+        设置物件以及子物件的样式，与 :meth:`set_styles` 只影响自身不同的是，该方法也会影响所有子物件
         '''
         flags = dict.fromkeys(styles.keys(), False)
         for item in self.walk_self_and_descendants():
@@ -215,6 +237,8 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     ) -> Self:
         '''
         设置物件自身的样式，不影响子物件
+
+        另见：:meth:`digest_styles`
         '''
         if depth is not None:
             self.depth.set(depth)
@@ -262,15 +286,36 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     def __call__(self, **kwargs) -> Self: ...
 
     @overload
-    def __getitem__(self, value: int) -> Item: ...
+    def __getitem__(self, key: int) -> Item: ...
     @overload
-    def __getitem__(self, value: slice) -> Group: ...
+    def __getitem__(self, key: slice) -> Group: ...
+    @overload
+    def __getitem__(self, key: Iterable[int]) -> Group: ...
+    @overload
+    def __getitem__(self, key: Iterable[bool]) -> Group: ...
 
-    def __getitem__(self, value):
-        if isinstance(value, slice):
-            from janim.items.points import Group
-            return Group(*self.children[value])
-        return self.children[value]
+    def __getitem__(self, key):
+        if isinstance(key, Iterable) and not isinstance(key, list):
+            key = list(key)
+
+        # example: item[0]
+        if isinstance(key, int):
+            return self.children[key]
+
+        from janim.items.points import Group
+
+        match key:
+            # example: item[0:2]
+            case slice():
+                return Group(*self.children[key])
+            # example: item[False, True, True]
+            case list() if all(isinstance(x, bool) for x in key):
+                return Group(*[sub for sub, flag in zip(self, key) if flag])
+            # example: item[0, 3, 4]
+            case list() if all(isinstance(x, int) for x in key):
+                return Group(*[self.children[x] for x in key])
+
+        raise GetItemError(_('Unsupported key {}'.format(key)))
 
     def __iter__(self):
         return iter(self.children)
@@ -335,7 +380,12 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         if name == '__setstate__':
             raise AttributeError()
 
-        cmpt_info = None if self._astype is None else getattr(self._astype, name, None)
+        mockable_or_cmpt_info = None if self._astype is None else getattr(self._astype, name, None)
+
+        if isinstance(mockable_or_cmpt_info, Callable) and getattr(mockable_or_cmpt_info, MOCKABLE_NAME, False):
+            return types.MethodType(mockable_or_cmpt_info, self)
+
+        cmpt_info = mockable_or_cmpt_info
         if not isinstance(cmpt_info, CmptInfo):
             super().__getattribute__(name)  # raise error
 
@@ -569,6 +619,9 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         for item in self.walk_self_and_descendants(root_only):
             item._fix_in_frame = on
         return self
+
+    def is_fix_in_frame(self) -> bool:
+        return self._fix_in_frame
 
     @classmethod
     def get_global_renderer(cls) -> None:

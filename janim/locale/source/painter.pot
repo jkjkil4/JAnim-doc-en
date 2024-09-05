@@ -16,24 +16,28 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: janim\items\item.py:203
+#: janim\gui\painter.py:45
 msgid ""
-"The passed parameter \"{key}\" did not match any style settings and was not "
-"used anywhere."
+"Note: This is used to determine the position on the screen. To actually add "
+"the drawn content, you need to manually add the corresponding code."
 msgstr ""
 
-#: janim\items\item.py:296
-msgid "Unsupported key {}"
+#: janim\gui\painter.py:59
+msgid "Draw"
 msgstr ""
 
-#: janim\items\item.py:341
-msgid ""
-"{name} is not based on Item class and cannot be used as an argument for "
-"astype"
+#: janim\gui\painter.py:66
+msgid "None"
 msgstr ""
 
-#: janim\items\item.py:424
-msgid ""
-"When root_only is set to True, as_time cannot be specified. Please use \"."
-"current(as_time=...).store()\" instead."
+#: janim\gui\painter.py:71
+msgid "(freehand-path)"
+msgstr ""
+
+#: janim\gui\painter.py:77
+msgid "Type"
+msgstr ""
+
+#: janim\gui\painter.py:338
+msgid "Count"
 msgstr ""

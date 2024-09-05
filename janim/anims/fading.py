@@ -6,10 +6,11 @@ import numpy as np
 from janim.anims.updater import DataUpdater, UpdaterParams
 from janim.components.rgbas import Cmpt_Rgbas
 from janim.constants import (C_LABEL_ANIM_ABSTRACT, C_LABEL_ANIM_IN,
-                             C_LABEL_ANIM_OUT, ORIGIN)
+                             C_LABEL_ANIM_OUT, ORIGIN, OUT)
 from janim.items.item import Item
 from janim.items.points import Points
 from janim.typing import Vect
+from janim.utils.paths import PathFunc, get_path_func
 
 
 class Fade(DataUpdater, metaclass=ABCMeta):
@@ -26,6 +27,11 @@ class Fade(DataUpdater, metaclass=ABCMeta):
         *,
         about_point: Vect | None = None,
         about_edge: Vect = ORIGIN,
+
+        path_arc: float = 0,
+        path_arc_axis: Vect = OUT,
+        path_func: PathFunc = None,
+
         become_at_end: bool = False,
         root_only: bool = False,
         **kwargs
@@ -39,6 +45,7 @@ class Fade(DataUpdater, metaclass=ABCMeta):
         )
         self.shift = np.array(shift)
         self.scale = scale
+        self.path_func = get_path_func(path_arc, path_arc_axis, path_func)
 
         if about_point is None and scale != 1.0:
             cmpt = item(Points).points
@@ -71,13 +78,13 @@ class FadeIn(Fade):
             rgbas[:, 3] *= p.alpha
             cmpt.set_rgbas(rgbas)
 
-        if np.any(self.shift != ORIGIN):
-            data.points.shift((1 - p.alpha) * -self.shift)
         if self.scale != 1.0:
             data.points.scale(
                 (1 - p.alpha) * 1 / self.scale + p.alpha,
                 about_point=self.about_point
             )
+        if np.any(self.shift != ORIGIN):
+            data.points.shift(self.path_func(-self.shift, ORIGIN, p.alpha))
 
 
 class FadeOut(Fade):
@@ -116,10 +123,30 @@ class FadeOut(Fade):
             rgbas[:, 3] *= 1 - p.alpha
             cmpt.set_rgbas(rgbas)
 
-        if np.any(self.shift != ORIGIN):
-            data.points.shift(p.alpha * self.shift)
         if self.scale != 1.0:
             data.points.scale(
                 p.alpha * self.scale + (1 - p.alpha),
                 about_point=self.about_point
             )
+        if np.any(self.shift != ORIGIN):
+            data.points.shift(self.path_func(ORIGIN, self.shift, p.alpha))
+
+
+class FadeInFromPoint(FadeIn):
+    def __init__(self, item: Item, point: Vect, **kwargs):
+        super().__init__(
+            item,
+            shift=item(Points).points.box.center - point,
+            scale=np.inf,
+            **kwargs
+        )
+
+
+class FadeOutToPoint(FadeOut):
+    def __init__(self, item: Item, point: Vect, **kwargs):
+        super().__init__(
+            item,
+            shift=point - item(Points).points.box.center,
+            scale=0,
+            **kwargs
+        )

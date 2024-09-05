@@ -4,6 +4,7 @@ from typing import Iterable
 import numpy as np
 
 from janim.constants import DOWN, GREY_B, LEFT, MED_SMALL_BUFF, RIGHT, UP
+from janim.items.geometry.arrow import ArrowTip
 from janim.items.geometry.line import Line
 from janim.items.points import Group
 from janim.items.text.text import Text
@@ -96,19 +97,43 @@ class NumberLine(Line):
             self.points.scale(self.unit_size)
         self.points.to_center()
 
+        index = 0
+
         if include_tip:
             self.add_tip(**self.tip_config)
+            self.tip_index = index
+            index += 1
+        else:
+            self.tip_index = None
+
         if include_ticks:
             self.add_ticks()
+            self.ticks_index = index
+            index += 1
+        else:
+            self.ticks_index = None
+
         if include_numbers:
             self.add_numbers()
+            self.numbers_index = index
+            index += 1
+        else:
+            self.numbers_index = None
+
+    @property
+    def tip(self) -> ArrowTip | None:
+        return None if self.tip_index is None else self[self.tip_index]
+
+    @property
+    def ticks(self) -> Group[Line] | None:
+        return None if self.ticks_index is None else self[self.ticks_index]
+
+    @property
+    def numbers(self) -> Group[Text] | None:
+        return None if self.numbers_index is None else self[self.numbers_index]
 
     def get_unit_size(self) -> float:
         return self.points.length / (self.x_max - self.x_min)
-
-    def number_to_point(self, number: float | np.ndarray) -> np.ndarray:
-        alpha = (number - self.x_min) / (self.x_max - self.x_min)
-        return outer_interpolate(self.points.get_start(), self.points.get_end(), alpha)
 
     def get_tick_range(self) -> np.ndarray:
         tmp = self.x_min // self.x_step
@@ -131,7 +156,7 @@ class NumberLine(Line):
     def add_ticks(
         self,
         excluding: Iterable[float] | None = None,
-    ) -> None:
+    ) -> Group[Line]:
         if excluding is None:
             excluding = self.numbers_to_exclude
 
@@ -145,7 +170,7 @@ class NumberLine(Line):
                 size *= self.longer_tick_multiple
             ticks.add(self.get_tick(x, size))
         self.add(ticks)
-        self.ticks = ticks
+        return ticks
 
     def get_tick(self, x: float, size: float | None = None) -> Line:
         if size is None:
@@ -162,7 +187,7 @@ class NumberLine(Line):
         excluding: Iterable[float] | None = None,
         font_size: int = 24,
         **kwargs
-    ) -> Group:
+    ) -> Group[Text]:
         if x_values is None:
             x_values = self.get_tick_range()
 
@@ -175,7 +200,6 @@ class NumberLine(Line):
                 continue
             numbers.add(self.get_number_item(x, font_size=font_size, **kwargs))
         self.add(numbers)
-        self.numbers = numbers
         return numbers
 
     def get_number_item(
@@ -202,7 +226,8 @@ class NumberLine(Line):
             buff=buff
         )
         if x < 0 and direction[0] == 0:
-            num_item.points.shift(num_item[0].points.box.width * LEFT / 2)
+            # Align without the minus sign
+            num_item.points.shift(num_item[0][0].points.box.width * LEFT / 2)
         return num_item
 
     def number_to_point(self, number: float | np.ndarray) -> np.ndarray:

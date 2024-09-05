@@ -12,6 +12,7 @@ from janim.items.points import Points
 from janim.locale.i18n import get_local_strings
 
 if TYPE_CHECKING:
+    from janim.camera.camera_info import CameraInfo
     from janim.gui.anim_viewer import AnimViewer
 
 _ = get_local_strings('selector')
@@ -37,12 +38,24 @@ class Selector(QObject):
         self.viewer.overlay.installEventFilter(self)
 
         self.clear()
+        self.painted_cursor_flag: bool = True
+        self.fixed_camera_info: CameraInfo | None = None
 
     def clear(self) -> None:
         self.current: Selector.SelectedItem | None = None
         self.children: list[Selector.SelectedItem] = []
         self.selected_children: list[Selector.SelectedItem] = []
         self.viewer.overlay.update()
+
+    def get_fixed_camera_info(self) -> CameraInfo:
+        if self.fixed_camera_info is not None:
+            return self.fixed_camera_info
+
+        from janim.camera.camera import Camera
+        info = Camera().points.info
+
+        self.fixed_camera_info = info
+        return info
 
     def glx_to_overlay_x(self, glx: float) -> float:
         return (glx + 1) / 2 * self.viewer.overlay.width()
@@ -80,6 +93,10 @@ class Selector(QObject):
         self.viewer.overlay.update()
 
     def on_glw_mouse_move(self, event: QMouseEvent) -> None:
+        cursor_flag = self.compute_cursor_flag()
+        if cursor_flag != self.painted_cursor_flag:
+            self.viewer.overlay.update()
+
         if not event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             match event.buttons():
                 case Qt.MouseButton.LeftButton:
@@ -93,13 +110,11 @@ class Selector(QObject):
         self.children.clear()
         self.selected_children.clear()
 
-        x, y = event.position().toTuple()
-        glx = x / self.viewer.glw.width() * 2 - 1
-        gly = y / self.viewer.glw.height() * -2 + 1
+        glx, gly = self.viewer.glw.map_to_gl2d(event.position())
 
         anim = self.viewer.anim
         global_t = anim._time
-        camera_info = anim.timeline.camera.current(as_time=global_t).points.info
+        camera_info = anim.current_camera_info()
 
         found: list[Selector.SelectedItem] = []
 
@@ -110,7 +125,10 @@ class Selector(QObject):
 
             box = display.item.current(as_time=global_t)(Points).points.box
 
-            mapped = camera_info.map_points(box.get_corners())
+            if display.item.is_fix_in_frame():
+                mapped = self.get_fixed_camera_info().map_points(box.get_corners())
+            else:
+                mapped = camera_info.map_points(box.get_corners())
             min_glx, min_gly = mapped.min(axis=0)
             max_glx, max_gly = mapped.max(axis=0)
             if not min_glx <= glx <= max_glx or not min_gly <= gly <= max_gly:
@@ -129,13 +147,14 @@ class Selector(QObject):
 
             for item in self.current.item.get_children():
                 box = item.current(as_time=global_t)(Points).points.box
-                mapped = camera_info.map_points(box.get_corners())
+                if item.is_fix_in_frame():
+                    mapped = self.get_fixed_camera_info().map_points(box.get_corners())
+                else:
+                    mapped = camera_info.map_points(box.get_corners())
                 self.children.append(Selector.SelectedItem(item, *mapped.min(axis=0), *mapped.max(axis=0)))
 
     def select_child_item(self, event: QMouseEvent) -> None:
-        x, y = event.position().toTuple()
-        glx = x / self.viewer.glw.width() * 2 - 1
-        gly = y / self.viewer.glw.height() * -2 + 1
+        glx, gly = self.viewer.glw.map_to_gl2d(event.position())
 
         for child in self.children:
             if child in self.selected_children:
@@ -145,14 +164,20 @@ class Selector(QObject):
             self.selected_children.append(child)
 
     def remove_child_item(self, event: QMouseEvent) -> None:
-        x, y = event.position().toTuple()
-        glx = x / self.viewer.glw.width() * 2 - 1
-        gly = y / self.viewer.glw.height() * -2 + 1
+        glx, gly = self.viewer.glw.map_to_gl2d(event.position())
 
         for child in self.selected_children:
             if not child.min_glx <= glx <= child.max_glx or not child.min_gly <= gly <= child.max_gly:
                 continue
             self.selected_children.remove(child)
+
+    def compute_cursor_flag(self) -> bool:
+        '''
+        ``True`` 表示鼠标在画面上半部，反之在下半部
+        '''
+        glw = self.viewer.glw
+        cursor_pos = glw.mapFromGlobal(glw.cursor().pos())
+        return cursor_pos.y() < glw.height() / 2
 
     def on_overlay_paint(self, event: QPaintEvent) -> None:
         rect = self.viewer.overlay.rect().adjusted(2, 2, -2, -2)
@@ -221,4 +246,10 @@ class Selector(QObject):
                 )
 
         p.setPen(Qt.GlobalColor.white)
-        p.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, '\n'.join(txt_list))
+
+        glw = self.viewer.glw
+        # 只有当鼠标在窗口内时才更新字的位置
+        if glw.rect().contains(glw.mapFromGlobal(glw.cursor().pos())):
+            self.painted_cursor_flag = self.compute_cursor_flag()
+        valign = Qt.AlignmentFlag.AlignBottom if self.painted_cursor_flag else Qt.AlignmentFlag.AlignTop
+        p.drawText(rect, Qt.AlignmentFlag.AlignLeft | valign, '\n'.join(txt_list))

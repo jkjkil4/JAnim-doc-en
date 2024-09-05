@@ -289,14 +289,22 @@ class Cmpt_Points[ItemT](Component[ItemT]):
                 )
             )
 
-        def get_corners(self) -> list[np.ndarray]:
+        def get_corners(self) -> np.ndarray:
             '''得到包围框（立方体）的八个顶点'''
-            return [
-                self.get(x + y + z)
-                for x in (LEFT, RIGHT)
-                for y in (DOWN, UP)
-                for z in (IN, OUT)
-            ]
+            x1, y1, z1 = self.data[0]
+            x2, y2, z2 = self.data[2]
+
+            # 不直接使用 `self.get` 是因为它太慢了
+            return np.array([
+                [x1, y1, z1],
+                [x1, y1, z2],
+                [x1, y2, z1],
+                [x1, y2, z2],
+                [x2, y1, z1],
+                [x2, y1, z2],
+                [x2, y2, z1],
+                [x2, y2, z2],
+            ])
 
         @property
         def top(self) -> np.ndarray:
@@ -445,7 +453,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         full_matrix[:matrix.shape[0], :matrix.shape[1]] = matrix
 
         self.apply_points_fn(
-            lambda points: np.dot(points, full_matrix.T),
+            lambda points: points @ full_matrix.T,
             about_point=about_point,
             about_edge=about_edge,
             root_only=root_only
@@ -494,7 +502,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         '''
         rot_matrix_T = rotation_matrix(angle, axis).T
         self.apply_points_fn(
-            lambda points: np.dot(points, rot_matrix_T),
+            lambda points: points @ rot_matrix_T,
             about_point=about_point,
             about_edge=about_edge,
             root_only=root_only

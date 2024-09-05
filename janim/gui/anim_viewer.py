@@ -35,6 +35,7 @@ from janim.gui.color_widget import ColorWidget
 from janim.gui.fixed_ratio_widget import FixedRatioWidget
 from janim.gui.font_table import FontTable
 from janim.gui.glwidget import GLWidget
+from janim.gui.painter import Painter
 from janim.gui.precise_timer import PreciseTimer
 from janim.gui.richtext_editor import RichTextEditor
 from janim.gui.selector import Selector
@@ -156,32 +157,36 @@ class AnimViewer(QMainWindow):
 
     def setup_menu_bar(self) -> None:
         menu_bar = self.menuBar()
-        menu_functions = menu_bar.addMenu(_('Functions'))
+        menu_functions = menu_bar.addMenu(_('Functions(&F)'))
 
-        self.action_stay_on_top = menu_functions.addAction(_('Stay on top'))
+        self.action_stay_on_top = menu_functions.addAction(_('Stay on top(&T)'))
         self.action_stay_on_top.setCheckable(True)
         self.action_stay_on_top.setShortcut('Ctrl+T')
 
         menu_functions.addSeparator()
 
-        self.action_rebuild = menu_functions.addAction(_('Rebuild'))
+        self.action_rebuild = menu_functions.addAction(_('Rebuild(&L)'))
         self.action_rebuild.setShortcut('Ctrl+L')
 
         menu_functions.addSeparator()
 
-        self.action_select = menu_functions.addAction(_('Subitem selector'))
+        self.action_select = menu_functions.addAction(_('Subitem selector(&S)'))
         self.action_select.setShortcut('Ctrl+S')
         self.selector: Selector | None = None
 
-        self.action_richtext_edit = menu_functions.addAction(_('Rich text editor'))
+        self.action_painter = menu_functions.addAction(_('Draw(&D)'))
+        self.action_painter.setShortcut('Ctrl+D')
+        self.painter: Painter | None = None
+
+        self.action_richtext_edit = menu_functions.addAction(_('Rich text editor(&R)'))
         self.action_richtext_edit.setShortcut('Ctrl+R')
         self.richtext_editor: RichTextEditor | None = None
 
-        self.action_font_table = menu_functions.addAction(_('Font list'))
+        self.action_font_table = menu_functions.addAction(_('Font list(&F)'))
         self.action_font_table.setShortcut('Ctrl+F')
         self.font_table: FontTable | None = None
 
-        self.action_color_widget = menu_functions.addAction(_('Color'))
+        self.action_color_widget = menu_functions.addAction(_('Color(&O)'))
         self.action_color_widget.setShortcut('Ctrl+O')
         self.color_widget: ColorWidget | None = None
 
@@ -203,6 +208,8 @@ class AnimViewer(QMainWindow):
 
     def setup_central_widget(self) -> None:
         self.glw = GLWidget(self)
+        self.glw.setMouseTracking(True)
+
         self.overlay = QWidget(self)
         self.overlay.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -312,6 +319,7 @@ class AnimViewer(QMainWindow):
         self.action_stay_on_top.toggled.connect(self.on_stay_on_top_toggled)
         self.action_rebuild.triggered.connect(self.on_rebuild_triggered)
         self.action_select.triggered.connect(self.on_select_triggered)
+        self.action_painter.triggered.connect(self.on_painter_triggered)
         self.action_richtext_edit.triggered.connect(self.on_richtext_edit_triggered)
         self.action_font_table.triggered.connect(self.on_font_table_triggered)
         self.action_color_widget.triggered.connect(self.on_color_widget_triggered)
@@ -426,6 +434,17 @@ class AnimViewer(QMainWindow):
 
     def on_selector_destroyed(self) -> None:
         self.selector = None
+
+    def on_painter_triggered(self) -> None:
+        if self.painter is None:
+            self.painter = Painter(self)
+            self.painter.setWindowFlag(Qt.WindowType.Tool)
+            self.painter.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self.painter.destroyed.connect(self.on_painter_destroyed)
+        self.painter.show()
+
+    def on_painter_destroyed(self) -> None:
+        self.painter = None
 
     def on_richtext_edit_triggered(self) -> None:
         if self.richtext_editor is None:
