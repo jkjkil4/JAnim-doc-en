@@ -201,6 +201,7 @@ class Timeline(metaclass=ABCMeta):
 
             self.config_getter = ConfigGetter(config_ctx_var.get())
             self.camera = Camera()
+            self.track(self.camera)
 
             if not quiet:   # pragma: no cover
                 log.info(_('Building "{name}"').format(name=self.__class__.__name__))
@@ -252,6 +253,12 @@ class Timeline(metaclass=ABCMeta):
         rough_at = round(at, 3)    # 防止因为精度误差使得本来计划更迟的任务被更早地执行了
         task = Timeline.ScheduledTask(rough_at, func, args, kwargs)
         insort(self.scheduled_tasks, task, key=lambda x: x.at)
+
+    def timeout(self, delay: float, func: Callable, *args, **kwargs) -> None:
+        '''
+        相当于 `schedule(self.current_time + delay, func, *args, **kwargs)`
+        '''
+        self.schedule(self.current_time + delay, func, *args, **kwargs)
 
     # region progress
 
@@ -511,7 +518,7 @@ class Timeline(metaclass=ABCMeta):
                         np.zeros(right_blank, dtype=np.int16)
                     ])
                 else:
-                    channels = data.shape[1]
+                    # channels = data.shape[1]
                     data = np.concatenate([
                         np.zeros((left_blank, channels), dtype=np.int16),
                         data,
@@ -731,7 +738,7 @@ class Timeline(metaclass=ABCMeta):
         while frame is not None:
             f_back = frame.f_back
 
-            if f_back is self._build_frame:
+            if f_back is self._build_frame and frame.f_code.co_filename == inspect.getfile(self.__class__):
                 return frame.f_lineno
 
             frame = f_back
@@ -843,7 +850,9 @@ class TimelineAnim(AnimGroup):
             return
 
         try:
-            with ContextSetter(Animation.global_t_ctx, self._time), self.timeline.with_config():
+            with ContextSetter(Animation.global_t_ctx, self._time), \
+                 ContextSetter(Timeline.ctx_var, self.timeline),    \
+                 self.timeline.with_config():
                 timeline = self.timeline
                 camera_info = timeline.camera.current().points.info
                 anti_alias_radius = self.cfg.anti_alias_width / 2 * camera_info.scaled_factor

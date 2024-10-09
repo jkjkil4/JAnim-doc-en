@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools as it
 import types
 from collections import defaultdict
-from typing import Generator, Iterable, Self
+from typing import Callable, Generator, Iterable, Self
 
 from janim.anims.animation import Animation, RenderCall
 from janim.anims.composition import AnimGroup
@@ -302,6 +302,13 @@ class FadeTransform(AnimGroup):
         src: Item,
         target: Item,
         *,
+        hide_src: bool = True,
+        show_target: bool = True,
+
+        path_arc: float = 0,
+        path_arc_axis: Vect = OUT,
+        path_func: PathFunc | None = None,
+
         src_root_only: bool = False,
         target_root_only: bool = False,
         **kwargs
@@ -319,12 +326,20 @@ class FadeTransform(AnimGroup):
         super().__init__(
             Transform(
                 src, src_copy,
+                hide_src=hide_src,
                 show_target=False,
+                path_arc=path_arc,
+                path_arc_axis=path_arc_axis,
+                path_func=path_func,
                 root_only=src_root_only
             ),
             Transform(
                 target_copy, target,
                 hide_src=False,
+                show_target=show_target,
+                path_arc=path_arc,
+                path_arc_axis=path_arc_axis,
+                path_func=path_func,
                 root_only=target_root_only
             ),
             **kwargs
@@ -336,17 +351,29 @@ class TransformMatchingShapes(AnimGroup):
         self,
         src: Item,
         target: Item,
+        *,
+        mismatch: tuple[Callable, Callable] = (FadeOutToPoint, FadeInFromPoint),
         duration: float = 2,
         lag_ratio: float = 0,
         **kwargs
     ):
-        def walk_self_and_descendant_with_points(item: Item) -> Generator[VItem, None, None]:
-            for item in item.walk_self_and_descendants():
-                if isinstance(item, VItem) and item.points.has():
-                    yield item
+        '''
+        匹配形状进行变换
 
-        src_pieces = list(walk_self_and_descendant_with_points(src))
-        target_pieces = list(walk_self_and_descendant_with_points(target))
+        - `mismatch` 表示对于不匹配的形状的处理
+        - 注：所有传入该动画类的额外参数都会被传入 `mismatch` 的方法中
+        '''
+        src_mismatch_method, target_mismatch_method = mismatch
+
+        def self_and_descendant_with_points(item: Item) -> list[VItem]:
+            return [
+                item
+                for item in item.walk_self_and_descendants()
+                if isinstance(item, VItem) and item.points.has()
+            ]
+
+        src_pieces = self_and_descendant_with_points(src)
+        target_pieces = self_and_descendant_with_points(target)
 
         src_matched: list[VItem] = []
         target_matched: list[VItem] = []
@@ -379,11 +406,11 @@ class TransformMatchingShapes(AnimGroup):
                 for piece1, piece2 in zip(src_matched, target_matched)
             ],
             *[
-                FadeOutToPoint(piece, target_center, **kwargs)
+                src_mismatch_method(piece, target_center, **kwargs)
                 for piece in src_mismatched
             ],
             *[
-                FadeInFromPoint(piece, src_center, **kwargs)
+                target_mismatch_method(piece, src_center, **kwargs)
                 for piece in target_mismatched
             ],
             duration=duration,

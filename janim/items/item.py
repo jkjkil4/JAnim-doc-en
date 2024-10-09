@@ -14,12 +14,13 @@ from janim.items.relation import Relation
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
 from janim.render.base import Renderer
-from janim.typing import SupportsApartAlpha, SupportsInterpolate
+from janim.typing import SupportsApartAlpha
 from janim.utils.data import AlignedData
 from janim.utils.iterables import resize_preserving_order
 from janim.utils.paths import PathFunc, straight_path
 
 if TYPE_CHECKING:
+    import moderngl as mgl
     from janim.items.points import Group
 
 _ = get_local_strings('item')
@@ -95,7 +96,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     覆盖该值以在子类中使用特定的渲染器
     '''
 
-    global_renderer: Renderer | None = None
+    global_renderer: dict[tuple[type, mgl.Context], Renderer] = {}
     '''
     共用的渲染器，用于 ``is_temporary=True`` 的物件
     '''
@@ -571,7 +572,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
             if isinstance(cmpt1, _CmptGroup) and isinstance(cmpt2, _CmptGroup):
                 cmpt_aligned = cmpt1.align(cmpt1, cmpt2, aligned)
 
-            elif cmpt2 is None or not isinstance(cmpt1, SupportsInterpolate):
+            elif cmpt2 is None:
                 cmpt_aligned = AlignedData(cmpt1, cmpt1, cmpt1)
             else:
                 cmpt_aligned = cmpt1.align_for_interpolate(cmpt1, cmpt2)
@@ -601,10 +602,6 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         for key, cmpt in self.components.items():
             cmpt1 = item1.components[key]
             cmpt2 = item2.components[key]
-
-            if not isinstance(cmpt, SupportsInterpolate):
-                continue
-
             cmpt.interpolate(cmpt1, cmpt2, alpha, path_func=path_func)
 
     def apart_alpha(self, n: int) -> None:
@@ -625,9 +622,11 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
     @classmethod
     def get_global_renderer(cls) -> None:
-        if cls.global_renderer is None:
-            cls.global_renderer = cls.renderer_cls()
-        return cls.global_renderer
+        key = (cls, Renderer.data_ctx.get().ctx)
+        renderer = cls.global_renderer.get(key, None)
+        if renderer is None:
+            renderer = cls.global_renderer[key] = cls.renderer_cls()
+        return renderer
 
     def create_renderer(self) -> None:
         if self.is_temporary:

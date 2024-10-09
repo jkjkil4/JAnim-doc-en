@@ -116,6 +116,7 @@ transform
         def construct(self):
             typ1 = Typst('sin x + cos x')
             typ2 = Typst('cos y + sin y')
+            typ2.match_pattern(typ1, '+')
             Group(typ1, typ2).points.scale(3)
 
             self.show(typ1)
@@ -157,7 +158,7 @@ transform
     class TransformMatchingShapesExample(Timeline):
         def construct(self):
             a = Text("the morse code", font_size=48).show()
-            b = Text("here some dots", font_size=48)
+            b = Text("here come dots", font_size=48)
 
             self.forward()
             self.play(TransformMatchingShapes(a, b, path_arc=PI/2))

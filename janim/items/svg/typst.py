@@ -5,11 +5,14 @@ import itertools as it
 import os
 import subprocess as sp
 import types
-from typing import Iterable, overload
+from typing import Iterable, Self, overload
+
+import numpy as np
 
 from janim.constants import ORIGIN, UP
 from janim.exception import (EXITCODE_TYPST_COMPILE_ERROR,
-                             EXITCODE_TYPST_NOT_FOUND, ExitException)
+                             EXITCODE_TYPST_NOT_FOUND, ExitException,
+                             InvalidOrdinalError)
 from janim.items.points import Group
 from janim.items.svg.svg_item import SVGItem
 from janim.items.vitem import VItem
@@ -18,9 +21,11 @@ from janim.logger import log
 from janim.utils.config import Config
 from janim.utils.file_ops import get_janim_dir, get_typst_temp_dir
 from janim.utils.iterables import flatten
-from janim.exception import InvalidOrdinalError
+from janim.utils.space_ops import rotation_between_vectors
 
 _ = get_local_strings('typst')
+
+type TypstPattern = TypstDoc | str
 
 
 class TypstDoc(SVGItem):
@@ -76,7 +81,7 @@ class TypstDoc(SVGItem):
         return svg_file_path
 
     @classmethod
-    def typstify(cls, obj: TypstDoc | str) -> TypstDoc:
+    def typstify(cls, obj: TypstPattern) -> TypstDoc:
         '''
         将字符串变为 Typst 对象，而本身已经是的则直接返回
         '''
@@ -84,54 +89,52 @@ class TypstDoc(SVGItem):
 
     # region pattern-matching
 
-    def indices(self, pattern: TypstDoc | str) -> list[int]:
+    def match_pattern(
+        self,
+        target: TypstDoc,
+        pattern: TypstPattern,
+        ordinal: int = 0,
+        target_ordinal: int | None = None
+    ) -> Self:
         '''
-        找出该公式中所有出现了 ``pattern`` 的位置
+        配对并通过变换使得配对的部分重合
 
-        - ``pattern`` 支持使用字符串或者 Typst 对象
+        例如
+
+        .. code-block:: python
+
+            t1 = Typst('x^2 + y^2')
+            t2 = Typst('x + y')
+            t2.points.match_pattern(t1, '+')
+
+        则会将 ``t2`` 进行变换使得二者的加号重合
         '''
-        pattern = self.typstify(pattern)
+        if target_ordinal is None:
+            target_ordinal = ordinal
+        assert isinstance(ordinal, int)
+        assert isinstance(target_ordinal, int)
 
-        lps = pattern.lps
-        indices, p = [], 0
+        indicator1 = self[pattern, ordinal][0]
+        indicator2 = target[self.typstify(pattern), target_ordinal][0]
 
-        for index, shape in enumerate(self):
-            while not (same := shape.points.same_shape(pattern[p])) and p != 0:
-                p = lps[p - 1]
-            if same:
-                p += 1
-            if p == len(pattern):
-                indices.append(index - (p - 1))
-                p = lps[p - 1]
+        # 旋转
+        vect1 = indicator1.points.identity[1]
+        vect2 = indicator2.points.identity[1]
 
-        return indices
+        if not np.isclose(np.dot(vect1, vect2), 1):
+            rot = rotation_between_vectors(vect1, vect2)
+            self.points.apply_matrix(rot)
 
-    lps_map: dict[str, list[int]] = {}
+        # 缩放
+        l1 = max(indicator1.points.box.width, indicator1.points.box.height)
+        l2 = max(indicator2.points.box.width, indicator2.points.box.height)
 
-    @property
-    def lps(self) -> list[int]:
-        '''
-        KMP 算法涉及的部分匹配表
-        '''
-        # 获取缓存
-        lps = TypstDoc.lps_map.get(self.text, None)
-        if lps is not None:
-            return lps
+        if not np.isclose(l1, l2):
+            self.points.scale(l2 / l1)
 
-        # 没缓存则计算
-        lps = [0] * len(self)
-        for index, shape in enumerate(self):
-            p, same = index, False
-            while p > 0 and not same:
-                p = lps[p - 1]
-                same = shape.points.same_shape(self[p])
-            if same:
-                p += 1
-            lps[index] = p
-
-        # 缓存并返回
-        TypstDoc.lps_map[self.text] = lps
-        return lps
+        # 移动使得重合
+        self.points.move_to_by_indicator(indicator1, indicator2)
+        return self
 
     @overload
     def __getitem__(self, key: int) -> VItem: ...
@@ -139,13 +142,13 @@ class TypstDoc(SVGItem):
     def __getitem__(self, key: slice) -> Group[VItem]: ...
 
     @overload
-    def __getitem__(self, key: str) -> Group[VItem]: ...
+    def __getitem__(self, key: TypstPattern) -> Group[VItem]: ...
     @overload
-    def __getitem__(self, key: tuple[str, int]) -> Group[VItem]: ...
+    def __getitem__(self, key: tuple[TypstPattern, int]) -> Group[VItem]: ...
     @overload
-    def __getitem__(self, key: tuple[str, Iterable[int]]) -> Group[VItem]: ...
+    def __getitem__(self, key: tuple[TypstPattern, Iterable[int]]) -> Group[Group[VItem]]: ...
     @overload
-    def __getitem__(self, key: tuple[str, types.EllipsisType]) -> Group[VItem]: ...
+    def __getitem__(self, key: tuple[TypstPattern, types.EllipsisType]) -> Group[Group[VItem]]: ...
 
     @overload
     def __getitem__(self, key: Iterable[int]) -> Group[VItem]: ...
@@ -164,14 +167,14 @@ class TypstDoc(SVGItem):
                 return super().__getitem__(key)
 
             # item['pattern']
-            case str(pattern):
+            case TypstDoc() | str() as pattern:
                 return self.get(self.slice(pattern, 0))
             # item['pattern', ordinal]
-            case str(pattern), int(ordinal):
+            case TypstDoc() | str() as pattern, int(ordinal):
                 return self.get(self.slice(pattern, ordinal))
-            # item['pattern', [o1, o2]]
+            # item['pattern', (o1, o2)]
             # item['pattern', ...]
-            case str(pattern), ordinal if isinstance(ordinal, (Iterable, types.EllipsisType)):
+            case TypstDoc() | str() as pattern, ordinal if isinstance(ordinal, (Iterable, types.EllipsisType)):
                 return Group(*self.get(self.slice(pattern, ordinal)))
 
             # TODO: multi_slice
@@ -225,9 +228,9 @@ class TypstDoc(SVGItem):
             ]
 
     @overload
-    def slice(self, pattern: TypstDoc | str, ordinal: int) -> slice: ...
+    def slice(self, pattern: TypstPattern, ordinal: int) -> slice: ...
     @overload
-    def slice(self, pattern: TypstDoc | str, ordinal: Iterable[int] | types.EllipsisType) -> list[slice]: ...
+    def slice(self, pattern: TypstPattern, ordinal: Iterable[int] | types.EllipsisType) -> list[slice]: ...
 
     def slice(self, pattern, ordinal=0):
         '''
@@ -256,6 +259,55 @@ class TypstDoc(SVGItem):
                 ]
 
         raise InvalidOrdinalError(_('ordinal {} is invalid').format(ordinal))
+
+    def indices(self, pattern: TypstPattern) -> list[int]:
+        '''
+        找出该公式中所有出现了 ``pattern`` 的位置
+
+        - ``pattern`` 支持使用字符串或者 Typst 对象
+        '''
+        pattern = self.typstify(pattern)
+
+        lps = pattern.lps
+        indices, p = [], 0
+
+        for index, shape in enumerate(self):
+            while not (same := shape.points.same_shape(pattern[p])) and p != 0:
+                p = lps[p - 1]
+            if same:
+                p += 1
+            if p == len(pattern):
+                indices.append(index - (p - 1))
+                p = lps[p - 1]
+
+        return indices
+
+    lps_map: dict[str, list[int]] = {}
+
+    @property
+    def lps(self) -> list[int]:
+        '''
+        KMP 算法涉及的部分匹配表
+        '''
+        # 获取缓存
+        lps = TypstDoc.lps_map.get(self.text, None)
+        if lps is not None:
+            return lps
+
+        # 没缓存则计算
+        lps = [0] * len(self)
+        for index, shape in enumerate(self):
+            p, same = index, False
+            while p > 0 and not same:
+                p = lps[p - 1]
+                same = shape.points.same_shape(self[p])
+            if same:
+                p += 1
+            lps[index] = p
+
+        # 缓存并返回
+        TypstDoc.lps_map[self.text] = lps
+        return lps
 
     # endregion
 
