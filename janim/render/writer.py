@@ -7,10 +7,10 @@ from functools import partial
 import moderngl as mgl
 from tqdm import tqdm as ProgressDisplay
 
-from janim.anims.timeline import TimelineAnim
+from janim.anims.timeline import Timeline, TimelineAnim, TimeRange
 from janim.exception import EXITCODE_FFMPEG_NOT_FOUND, ExitException
-from janim.logger import log
 from janim.locale.i18n import get_local_strings
+from janim.logger import log
 
 _ = get_local_strings('writer')
 
@@ -55,14 +55,14 @@ class VideoWriter:
     def writes(anim: TimelineAnim, file_path: str, *, quiet=False) -> None:
         VideoWriter(anim).write_all(file_path, quiet=quiet)
 
-    def write_all(self, file_path: str, *, quiet=False) -> None:
+    def write_all(self, file_path: str, *, quiet=False, _keep_temp: bool = False) -> None:
         '''将时间轴动画输出到文件中
 
         - 指定 ``quiet=True``，则不会输出前后的提示信息，但仍有进度条
         '''
         name = self.anim.timeline.__class__.__name__
         if not quiet:
-            log.info(_('Writing "{name}"').format(name=name))
+            log.info(_('Writing video "{name}"').format(name=name))
             t = time.time()
 
         self.fbo.use()
@@ -85,17 +85,19 @@ class VideoWriter:
             bytes = self.fbo.read(components=4)
             self.writing_process.stdin.write(bytes)
 
-        self.close_video_pipe()
+        self.close_video_pipe(_keep_temp)
 
         if not quiet:
             log.info(
-                _('Finished writing "{name}" in {elapsed:.2f} s')
+                _('Finished writing video "{name}" in {elapsed:.2f} s')
                 .format(name=name, elapsed=time.time() - t)
             )
-            log.info(
-                _('File saved to "{file_path}"')
-                .format(file_path=file_path)
-            )
+
+            if not _keep_temp:
+                log.info(
+                    _('File saved to "{file_path}" (video only)')
+                    .format(file_path=file_path)
+                )
 
     def open_video_pipe(self, file_path: str) -> None:
         stem, ext = os.path.splitext(file_path)
@@ -115,17 +117,21 @@ class VideoWriter:
             '-loglevel', 'error',
         ]
 
-        if ext == ".mov":
+        if ext == '.mp4':
+            command += [
+                '-vcodec', 'libx264',
+                '-pix_fmt', 'yuv420p',
+            ]
+        elif ext == '.mov':
             # This is if the background of the exported
             # video should be transparent.
             command += [
                 '-vcodec', 'qtrle',
             ]
+        elif ext == '.gif':
+            pass
         else:
-            command += [
-                '-vcodec', 'libx264',
-                '-pix_fmt', 'yuv420p',
-            ]
+            assert False
 
         command += [self.temp_file_path]
         try:
@@ -135,18 +141,23 @@ class VideoWriter:
                         'Please install ffmpeg and add it to the environment variables.'))
             raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
 
-    def close_video_pipe(self) -> None:
+    def close_video_pipe(self, _keep_temp: bool) -> None:
         self.writing_process.stdin.close()
         self.writing_process.wait()
         self.writing_process.terminate()
-        shutil.move(self.temp_file_path, self.final_file_path)
+        if not _keep_temp:
+            shutil.move(self.temp_file_path, self.final_file_path)
 
 
 class AudioWriter:
     def __init__(self, anim: TimelineAnim):
         self.anim = anim
 
-    def write_all(self, file_path: str, *, quiet=False) -> None:
+    @staticmethod
+    def writes(anim: TimelineAnim, file_path: str, *, quiet=False) -> None:
+        AudioWriter(anim).write_all(file_path, quiet=quiet)
+
+    def write_all(self, file_path: str, *, quiet=False, _keep_temp: bool = False) -> None:
         name = self.anim.timeline.__class__.__name__
         if not quiet:
             log.info(_('Writing audio of "{name}"').format(name=name))
@@ -171,17 +182,19 @@ class AudioWriter:
             samples = get_audio_samples(frame)
             self.writing_process.stdin.write(samples.tobytes())
 
-        self.close_audio_pipe()
+        self.close_audio_pipe(_keep_temp)
 
         if not quiet:
             log.info(
                 _('Finished writing audio of "{name}" in {elapsed:.2f} s')
                 .format(name=name, elapsed=time.time() - t)
             )
-            log.info(
-                _('File saved to "{file_path}"')
-                .format(file_path=file_path)
-            )
+
+            if not _keep_temp:
+                log.info(
+                    _('File saved to "{file_path}"')
+                    .format(file_path=file_path)
+                )
 
     def open_audio_pipe(self, file_path: str) -> None:
         stem, ext = os.path.splitext(file_path)
@@ -206,12 +219,79 @@ class AudioWriter:
                         'Please install ffmpeg and add it to the environment variables.'))
             raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
 
-    def close_audio_pipe(self) -> None:
+    def close_audio_pipe(self, _keep_temp: bool) -> None:
         self.writing_process.stdin.close()
         self.writing_process.wait()
         self.writing_process.terminate()
-        shutil.move(self.temp_file_path, self.final_file_path)
+        if not _keep_temp:
+            shutil.move(self.temp_file_path, self.final_file_path)
+
+
+def merge_video_and_audio(
+    ffmpeg_bin: str,
+    video_path: str,
+    audio_path: str,
+    result_path: str,
+    remove: bool = True
+) -> None:
+    command = [
+        ffmpeg_bin,
+        '-y',
+        '-i', video_path,
+        '-i', audio_path,
+        '-shortest',
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        result_path,
+        '-loglevel', 'error'
+    ]
+
+    try:
+        merge_process = sp.Popen(command, stdin=sp.PIPE)
+    except FileNotFoundError:
+        log.error(_('Unable to merge video. '
+                    'Please install ffmpeg and add it to the environment variables.'))
+        raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
+
+    merge_process.wait()
+    merge_process.terminate()
+
+    if remove:
+        os.remove(video_path)
+        os.remove(audio_path)
+
+    log.info(
+        _('File saved to "{file_path}" (merged)')
+        .format(file_path=result_path)
+    )
+
+
+class SRTWriter:
+    @staticmethod
+    def writes(anim: TimelineAnim, file_path: str) -> None:
+        with open(file_path, 'wt') as file:
+            chunks: list[tuple[TimeRange, list[Timeline.SubtitleInfo]]] = []
+
+            for info in anim.timeline.subtitle_infos:
+                if not chunks or chunks[-1][0] != info.range:
+                    chunks.append((info.range, []))
+                chunks[-1][1].append(info)
+
+            for i, chunk in enumerate(chunks, start=1):
+                file.write(f'\n{i}\n')
+                file.write(f'{SRTWriter.t_to_srt_time(chunk[0].at)} --> {SRTWriter.t_to_srt_time(chunk[0].end)}\n')
+                for info in reversed(chunk[1]):
+                    file.write(f'{info.text}\n')
 
     @staticmethod
-    def writes(anim: TimelineAnim, file_path: str, *, quiet=False) -> None:
-        AudioWriter(anim).write_all(file_path, quiet=quiet)
+    def t_to_srt_time(t: float):
+        '''
+        将秒数转换为 SRT 时间格式：HH:MM:SS,mmm
+        '''
+        t = round(t, 3)
+        hours = int(t // 3600)
+        minutes = int((t % 3600) // 60)
+        secs = int(t % 60)
+        millis = int((t % 1) * 1000)
+
+        return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"

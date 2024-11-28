@@ -46,10 +46,10 @@ class _ItemMeta(type):
         }
         attrdict[CLS_CMPTINFO_NAME] = cls_components
 
-        # 记录 set_style 的参数
-        set_style_func = attrdict.get('set_style', None)
-        if set_style_func is not None and callable(set_style_func):
-            sig = inspect.signature(set_style_func)
+        # 记录 apply_style 的参数
+        apply_style_func = attrdict.get('apply_style', None)
+        if apply_style_func is not None and callable(apply_style_func):
+            sig = inspect.signature(apply_style_func)
             styles_name: list[str] = [
                 param.name
                 for param in list(sig.parameters.values())[1:]
@@ -68,6 +68,24 @@ class _ItemMeta(type):
             attrdict[ALL_STYLES_NAME] = all_styles
 
         return super().__new__(cls, name, bases, attrdict)
+
+    @dataclass
+    class _CmptInitData:
+        info: CmptInfo[CmptInfo]
+        decl_cls: type[Item]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.cmpt_init_datas: dict[str, _ItemMeta._CmptInitData] = {}
+        datas = self.cmpt_init_datas
+
+        for cls in reversed(self.mro()):
+            for key, info in cls.__dict__.get(CLS_CMPTINFO_NAME, {}).items():
+                if key in datas:
+                    datas[key].info = info
+                else:  # key not in datas
+                    datas[key] = self._CmptInitData(info, cls)
 
 
 def mockable(func):
@@ -121,22 +139,17 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         from janim.anims.timeline import Timeline
         self.timeline = Timeline.get_context(raise_exc=False)
 
-        self._init_components()
-
         self._astype: type[Item] | None = None
         self._astype_mock_cmpt: dict[str, Component] = {}
 
         self._fix_in_frame = False
         self.renderer: Renderer | None = None
 
+        self._init_components()
+
         if children is not None:
             self.add(*children)
-        self.digest_styles(**kwargs)
-
-    @dataclass
-    class _CmptInitData:
-        info: CmptInfo[CmptInfo]
-        decl_cls: type[Item]
+        self.set(**kwargs)
 
     def _init_components(self) -> None:
         '''
@@ -146,17 +159,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         因为 CmptInfo 的 __get__ 标注的返回类型是对应的 Component，
         所以以上做法没有影响基于类型标注的代码补全
         '''
-        type CmptKey = str
-
-        datas: dict[CmptKey, Item._CmptInitData] = {}
-
-        for cls in reversed(self.__class__.mro()):
-            for key, info in cls.__dict__.get(CLS_CMPTINFO_NAME, {}).items():
-                info: CmptInfo
-                if key in datas:
-                    datas[key].info = info
-                else:  # key not in datas
-                    datas[key] = self._CmptInitData(info, cls)
+        datas = self.__class__.cmpt_init_datas
 
         self.components: dict[str, Component] = {}
 
@@ -174,7 +177,6 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         self,
         cmpt: Component,
         func: Callable | str,
-        *,
         recurse_up=False,
         recurse_down=False,
     ) -> Self:
@@ -204,9 +206,9 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         if recurse_down:
             mark(self.descendants())
 
-    def digest_styles(self, **styles):
+    def set(self, **styles) -> None:
         '''
-        设置物件以及子物件的样式，与 :meth:`set_styles` 只影响自身不同的是，该方法也会影响所有子物件
+        设置物件以及子物件的样式，与 :meth:`apply_styles` 只影响自身不同的是，该方法也会影响所有子物件
         '''
         flags = dict.fromkeys(styles.keys(), False)
         for item in self.walk_self_and_descendants():
@@ -218,7 +220,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
             }
             for key in apply_styles:
                 flags[key] = True
-            item.set_style(**apply_styles)
+            item.apply_style(**apply_styles)
 
         for key, flag in flags.items():
             if not flag:
@@ -227,11 +229,20 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
                     .format(key=key)
                 )
 
+    def digest_styles(self, **styles) -> None:
+        from janim.utils.deprecation import deprecated
+        deprecated(
+            'Item.digest_styles',
+            'Item.set',
+            remove=(2, 3)
+        )
+        self.set(**styles)
+
     @classmethod
     def get_available_styles(cls) -> list[str]:
         return getattr(cls, ALL_STYLES_NAME)
 
-    def set_style(
+    def apply_style(
         self,
         depth: float | None = None,
         **kwargs
@@ -239,11 +250,24 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         '''
         设置物件自身的样式，不影响子物件
 
-        另见：:meth:`digest_styles`
+        另见：:meth:`set`
         '''
         if depth is not None:
-            self.depth.set(depth)
+            self.depth.set(depth, root_only=True)
         return self
+
+    def set_style(
+        self,
+        depth: float | None = None,
+        **kwargs
+    ) -> Self:
+        from janim.utils.deprecation import deprecated
+        deprecated(
+            'Item.set_style',
+            'Item.apply_style',
+            remove=(2, 3)
+        )
+        self.apply_style(depth, **kwargs)
 
     def do(self, func: Callable[[Self], Any]) -> Self:
         '''
@@ -316,7 +340,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
             case list() if all(isinstance(x, int) for x in key):
                 return Group(*[self.children[x] for x in key])
 
-        raise GetItemError(_('Unsupported key {}'.format(key)))
+        raise GetItemError(_('Unsupported key: {}').format(key))
 
     def __iter__(self):
         return iter(self.children)
@@ -600,8 +624,11 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         进行插值（仅对该物件进行，不包含后代物件）
         '''
         for key, cmpt in self.components.items():
-            cmpt1 = item1.components[key]
-            cmpt2 = item2.components[key]
+            try:
+                cmpt1 = item1.components[key]
+                cmpt2 = item2.components[key]
+            except KeyError:
+                continue
             cmpt.interpolate(cmpt1, cmpt2, alpha, path_func=path_func)
 
     def apart_alpha(self, n: int) -> None:

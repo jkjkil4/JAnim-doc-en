@@ -15,6 +15,7 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "attrs",
     "numpy",
     "scipy",
     "colour",
@@ -49,6 +50,7 @@ exclude = [
     ".asv/", ".vscode/", ".github/", "assets/", "doc/", "benchmarks/", "test/",
     ".pypirc",
     ".coveragerc",
+    "asv.conf.json",
     "janim/gui/*.ui",
     "janim/locale/source",
     "janim/locale/compile.py",

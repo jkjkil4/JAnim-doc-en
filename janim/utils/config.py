@@ -3,16 +3,38 @@ from __future__ import annotations
 import os
 import tempfile
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Iterable, Self
+from functools import partial
+from typing import Generator, Iterable, Self
 
+import attrs
 import psutil
 from colour import Color
 
 from janim.constants import DOWN, LEFT, RIGHT, UP
+from janim.locale.i18n import get_local_strings
 from janim.typing import Vect
 
+_ = get_local_strings('config')
+
 config_ctx_var: ContextVar[list[Config]] = ContextVar('config_ctx_var')
+
+
+def optional_type_validator(type, typename: str):
+    def validator(inst, attr: attrs.Attribute, value):
+        if value is None:
+            return
+        if not isinstance(value, type):
+            raise TypeError(
+                _("{attrname}={value!r} is incompatible with type {typename}")
+                .format(attrname=attr.name, typename=typename, value=value)
+            )
+
+    return validator
+
+
+_field = partial(attrs.field, default=None)
+_opt_int_validator = optional_type_validator(int, 'int')
+_opt_float_validator = optional_type_validator((int, float), 'float')
 
 
 class _ConfigMeta(type):
@@ -21,7 +43,7 @@ class _ConfigMeta(type):
         return config_getter
 
 
-@dataclass(kw_only=True)
+@attrs.define(kw_only=True, slots=False)
 class Config(metaclass=_ConfigMeta):
     '''配置
 
@@ -53,7 +75,7 @@ class Config(metaclass=_ConfigMeta):
     全局配置
     ------------
 
-    在使用命令行参数时，使用 ``-c 配置名 值`` 可以修改全局配置
+    在使用命令行参数时，使用 ``-c 配置名 值`` 可以修改全局配置，设定的全局配置会覆盖其它配置
 
     例如 ``janim write your_file.py YourTimeline -c fps 120`` 可以将渲染帧率设置为 120
 
@@ -85,24 +107,24 @@ class Config(metaclass=_ConfigMeta):
 
     另见：:py:obj:`~.Timeline.CONFIG`
     '''
-    fps: int = None
-    preview_fps: int = None
-    anti_alias_width: float = None
+    fps: int = _field(validator=_opt_int_validator)
+    preview_fps: int = _field(validator=_opt_int_validator)
+    anti_alias_width: float = _field(validator=_opt_float_validator)
 
-    frame_height: float = None
-    frame_width: float = None
+    frame_height: float = _field(validator=_opt_float_validator)
+    frame_width: float = _field(validator=_opt_float_validator)
 
-    pixel_height: int = None
-    pixel_width: int = None
-    background_color: Color = None
+    pixel_height: int = _field(validator=_opt_int_validator)
+    pixel_width: int = _field(validator=_opt_int_validator)
+    background_color: Color = _field(validator=optional_type_validator(Color, 'Color'))
     font: str | Iterable[str] = None
     subtitle_font: str | Iterable[str] = None
 
-    audio_framerate: int = None
-    audio_channels: int = None
+    audio_framerate: int = _field(validator=_opt_int_validator)
+    audio_channels: int = _field(validator=_opt_int_validator)
 
     wnd_pos: str = None
-    wnd_monitor: int = None
+    wnd_monitor: int = _field(validator=_opt_int_validator)
 
     typst_bin: str = None
 
@@ -112,7 +134,7 @@ class Config(metaclass=_ConfigMeta):
     temp_dir: str = None
     asset_dir: str | list[str] = None
 
-    client_search_port: int = None
+    client_search_port: int = _field(validator=_opt_int_validator)
 
     def __enter__(self) -> Self:
         lst = config_ctx_var.get()
@@ -174,7 +196,7 @@ cli_config = Config()
 会被命令行 ``--config`` 参数自动修改
 '''
 
-config_ctx_var.set([default_config, cli_config])
+config_ctx_var.set([default_config])
 
 
 class ConfigGetter:
@@ -186,9 +208,12 @@ class ConfigGetter:
     def __init__(self, config_ctx: list[Config] | None = None):
         self.config_ctx = config_ctx
 
+    def walk(self) -> Generator[Config, None, None]:
+        yield cli_config
+        yield from reversed(self.config_ctx or config_ctx_var.get())
+
     def __getattr__(self, name: str) -> None:
-        lst = self.config_ctx or config_ctx_var.get()
-        for config in reversed(lst):
+        for config in self.walk():
             value = getattr(config, name)
             if value is not None:
                 return value

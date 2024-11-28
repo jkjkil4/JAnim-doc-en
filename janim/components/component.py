@@ -92,15 +92,11 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
         '''
         详见： :meth:`~.Item.broadcast_refresh_of_component`
         '''
-        super().mark_refresh(func)
+        # 与 super().mark_refresh(func) 等价，这样写是为了尽可能优化性能
+        refresh.Refreshable.mark_refresh(self, func)
 
         if self.bind is not None:
-            self.bind.at_item.broadcast_refresh_of_component(
-                self,
-                func,
-                recurse_up=recurse_up,
-                recurse_down=recurse_down
-            )
+            self.bind.at_item.broadcast_refresh_of_component(self, func, recurse_up, recurse_down)
 
     def copy(self) -> Self:
         cmpt_copy = copy.copy(self)
@@ -166,7 +162,7 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
     def align_for_interpolate(cls, cmpt1, cmpt2) -> AlignedData[Self]:
         return AlignedData(cmpt1, cmpt1, cmpt1)
 
-    def interpolate(self, cmpt1, cmpt2, alpha: float, *, path_func=None): ...
+    def interpolate(self, cmpt1, cmpt2, alpha: float, *, path_func=None) -> None: ...
 
 
 class CmptInfo[T]:

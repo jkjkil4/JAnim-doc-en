@@ -1,8 +1,6 @@
 import importlib.machinery
 import inspect
 import os
-import platform
-import subprocess as sp
 import time
 from argparse import Namespace
 from functools import lru_cache
@@ -12,6 +10,7 @@ from janim.exception import (EXITCODE_MODULE_NOT_FOUND, EXITCODE_NOT_FILE,
                              ExitException)
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
+from janim.utils.file_ops import open_file
 from janim.utils.config import cli_config, default_config
 
 _ = get_local_strings('cli')
@@ -42,7 +41,7 @@ def run(args: Namespace) -> None:
 
     widgets: list[AnimViewer] = []
     for timeline in timelines:
-        viewer = AnimViewer(timeline().build(),
+        viewer = AnimViewer(timeline().build(hide_subtitles=args.hide_subtitles),
                             auto_play=auto_play,
                             interact=args.interact,
                             available_timeline_names=available_timeline_names)
@@ -76,17 +75,29 @@ def write(args: Namespace) -> None:
     if not timelines:
         return
 
-    from janim.render.writer import AudioWriter, VideoWriter
+    from janim.render.writer import (AudioWriter, SRTWriter, VideoWriter,
+                                     merge_video_and_audio)
 
     log.info('======')
 
-    built = [timeline().build() for timeline in timelines]
+    built = [timeline().build(hide_subtitles=args.hide_subtitles) for timeline in timelines]
 
-    log.info('======')
+    # 当设定 video_with_audio 时，忽略 video 和 audio 选项
+    if args.video_with_audio:
+        if args.video:
+            log.warning(_("'--video' is ignored because '--video_with_audio' is set"))
+            args.video = False
+        if args.audio:
+            log.warning(_("'--audio' is ignored because '--video_with_audio' is set"))
+            args.audio = False
 
-    both = not args.video and not args.audio
+    # 当四个选项都没设定时，将 video_with_audio 作为默认行为
+    if not args.video_with_audio and not args.video and not args.audio and not args.srt:
+        args.video_with_audio = True
 
-    log.info('======')
+    is_gif = args.format == 'gif'
+
+    prev_is_skipped = False
 
     for anim in built:
         name = anim.timeline.__class__.__name__
@@ -96,32 +107,82 @@ def write(args: Namespace) -> None:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        writes_video = both or args.video
-        writes_audio = (both or args.audio) and anim.timeline.has_audio()
+        video_with_audio = args.video_with_audio
+        video = args.video
+        audio = args.audio
+        srt = args.srt
+        open_result = args.open and anim is built[-1]
+
+        # 如果其实没办法做到 video_with_audio，那么把 video_with_audio 用 video 和 audio 替代
+        fallback = not anim.timeline.has_audio() or is_gif
+        if video_with_audio and fallback:
+            video_with_audio = False
+            video = True
+            audio = True
+
+        writes_video = video_with_audio or video
+        writes_audio = (video_with_audio or audio) and anim.timeline.has_audio()
+        writes_srt = srt and anim.timeline.has_subtitle()
+
+        skip = not writes_video and not writes_audio and not writes_srt
+
+        # 这个判断使得连续跳过多个时，不输出额外的分割线
+        if not (prev_is_skipped and skip):
+            log.info('======')
+
+        prev_is_skipped = skip
+
+        if skip:
+            log.info(
+                _('Skipping "{name}": no part to output')
+                .format(name=name)
+            )
+            continue
 
         if writes_video:
             log.info(f'fps={anim.cfg.fps}')
             log.info(f'resolution="{anim.cfg.pixel_width}x{anim.cfg.pixel_height}"')
             log.info(f'format="{args.format}"')
         if writes_audio:
-            log.info(f'audio_format="{args.audio_format}"')
+            if not video_with_audio:
+                log.info(f'audio_format="{args.audio_format}"')
             log.info(f'audio_framerate="{anim.cfg.audio_framerate}"')
         log.info(f'output_dir="{output_dir}"')
 
         if writes_video:
-            writer = VideoWriter(anim)
-            writer.write_all(
+            video_writer = VideoWriter(anim)
+            video_writer.write_all(
                 os.path.join(output_dir,
-                             f'{name}.{args.format}')
+                             f'{name}.{args.format}'),
+                _keep_temp=video_with_audio
             )
-            if args.open and anim is built[-1]:
-                open_file(writer.final_file_path)
+            if open_result and not video_with_audio:
+                open_file(video_writer.final_file_path)
 
         if writes_audio:
-            writer = AudioWriter(anim)
-            writer.write_all(
+            audio_writer = AudioWriter(anim)
+            audio_writer.write_all(
                 os.path.join(output_dir,
-                             f'{name}.{args.audio_format}')
+                             f'{name}.{args.audio_format}'),
+                _keep_temp=video_with_audio
+            )
+            if open_result and not video_with_audio and not writes_video:
+                open_file(audio_writer.final_file_path)
+
+        if video_with_audio:
+            merge_video_and_audio(anim.cfg.ffmpeg_bin,
+                                  video_writer.temp_file_path,
+                                  audio_writer.temp_file_path,
+                                  video_writer.final_file_path)
+            if open_result:
+                open_file(video_writer.final_file_path)
+
+        if writes_srt:
+            file_path = os.path.join(output_dir, f'{name}.srt')
+            SRTWriter.writes(anim, file_path)
+            log.info(
+                _('Generated SRT file "{file_path}"')
+                .format(file_path=file_path)
             )
 
     log.info('======')
@@ -278,26 +339,3 @@ def get_all_timelines_from_module(module) -> list[type[Timeline]]:
     classes.sort(key=key)
 
     return classes
-
-
-def open_file(file_path: str) -> None:
-    '''
-    打开指定的文件
-    '''
-    current_os = platform.system()
-    if current_os == "Windows":
-        os.startfile(file_path)
-    else:
-        commands = []
-        if current_os == "Linux":
-            commands.append("xdg-open")
-        elif current_os.startswith("CYGWIN"):
-            commands.append("cygstart")
-        else:  # Assume macOS
-            commands.append("open")
-
-        commands.append(file_path)
-
-        FNULL = open(os.devnull, 'w')
-        sp.call(commands, stdout=FNULL, stderr=sp.STDOUT)
-        FNULL.close()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Callable, Iterable, Self, overload
+from typing import Callable, Iterable, Self
 
 import numpy as np
 
@@ -20,7 +20,8 @@ from janim.utils.data import AlignedData, Array
 from janim.utils.iterables import resize_and_repeatedly_extend
 from janim.utils.paths import PathFunc, straight_path
 from janim.utils.signal import Signal
-from janim.utils.space_ops import angle_of_vector, get_norm, rotation_matrix
+from janim.utils.space_ops import (angle_of_vector, get_norm, normalize,
+                                   rotation_between_vectors, rotation_matrix)
 
 _ = get_local_strings('points')
 
@@ -54,7 +55,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         return cmpt_copy
 
     def become(self, other: Cmpt_Points) -> Self:
-        if not self.not_changed(other):
+        if not self._points.is_share(other._points):
             self._points = other._points.copy()
             Cmpt_Points.set.emit(self)
         return self
@@ -84,10 +85,8 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         *,
         path_func: PathFunc = straight_path
     ) -> None:
-        if cmpt1.not_changed(cmpt2):
-            return
-
-        self.set(path_func(cmpt1.get(), cmpt2.get(), alpha))
+        if not cmpt1._points.is_share(cmpt2._points):
+            self.set(path_func(cmpt1.get(), cmpt2.get(), alpha))
 
     # region 点数据 | Points
 
@@ -225,7 +224,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         return self.BoundingBox(np.vstack(box_datas) if box_datas else [])
 
     @property
-    @set.self_refresh()
+    @set.self_refresh
     @refresh.register
     def self_box(self) -> BoundingBox:
         '''
@@ -734,6 +733,37 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         return self
 
+    def shear(
+        self,
+        factor: float = 0.2,
+        direction: Vect = RIGHT,
+        *,
+        about_point: Vect | None = None,
+        about_edge: Vect = ORIGIN,
+        root_only: bool = False
+    ) -> Self:
+        '''
+        切变
+
+        - ``factor`` 表示切变的程度
+        - ``direction`` 表示切变的方向
+        - 可以传入 ``about_point`` 或 ``about_edge`` 控制参考点
+        '''
+        mat_shear = [
+            [1, factor, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ]
+        if np.isclose(normalize(direction), RIGHT).all():
+            mat = mat_shear
+        else:
+            mat_rot = rotation_between_vectors(direction, RIGHT)
+            # mat_rot.T == mat_rot.I
+            mat = mat_rot.T @ mat_shear @ mat_rot
+
+        self.apply_matrix(mat, about_point=about_point, about_edge=about_edge, root_only=root_only)
+        return self
+
     def put_start_and_end_on(self, start: Vect, end: Vect) -> Self:
         '''
         通过旋转和缩放，使得物件的起点和终点被置于 ``start`` 和 ``end``
@@ -835,7 +865,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         .. note::
 
-            这个示例使用 :meth:`~.Typst.match_pattern` 会更简洁
+            这个示例使用 :meth:`~.TypstDoc.match_pattern` 会更简洁
         '''
         cmpt = self.get_same_cmpt(indicator)
         self.shift(

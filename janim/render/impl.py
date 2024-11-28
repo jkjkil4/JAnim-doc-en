@@ -27,6 +27,8 @@ class DotCloudRenderer(Renderer):
     def init(self) -> None:
         self.prog = get_program('render/shaders/dotcloud')
 
+        self.u_fix = self.get_u_fix_in_frame(self.prog)
+
         self.ctx = self.data_ctx.get().ctx
         self.vbo_points = self.ctx.buffer(reserve=1)
         self.vbo_color = self.ctx.buffer(reserve=1)
@@ -79,14 +81,23 @@ class DotCloudRenderer(Renderer):
             self.vbo_points.write(bytes)
             self.prev_points = new_points
 
-        self.update_fix_in_frame(item, self.prog)
+        self.update_fix_in_frame(self.u_fix, item)
         self.vao.render(mgl.POINTS, vertices=len(self.prev_points))
 
 
 class VItemRenderer(Renderer):
     def init(self) -> None:
         self.comp = get_compute_shader('render/shaders/map_points.comp.glsl')
+
+        self.comp_u_fix = self.get_u_fix_in_frame(self.comp)
+
         self.prog = get_program('render/shaders/vitem')
+
+        self.u_fix = self.get_u_fix_in_frame(self.prog)
+        self.u_stroke_background: mgl.Uniform = self.prog['stroke_background']
+        self.u_is_fill_transparent = self.prog['is_fill_transparent']
+        self.u_glow_color = self.prog['glow_color']
+        self.u_glow_size = self.prog['glow_size']
 
         self.ctx = self.data_ctx.get().ctx
         self.vbo_coord = self.ctx.buffer(reserve=4 * 2 * 4)
@@ -105,24 +116,30 @@ class VItemRenderer(Renderer):
         self.prev_radius = None
         self.prev_stroke = None
         self.prev_fill = None
+        self.fill_transparent = False
+        self.prev_glow_size = -1
+
+        self.points_vec4buffer = np.empty((0, 4), dtype=np.float32)
 
     def render(self, item: VItem) -> None:
-        if item.points.curves_count() == 0:
+        new_points = item.points._points.data
+
+        if len(new_points) < 3:
             return
         render_data = self.data_ctx.get()
 
         new_camera_info = render_data.camera_info
-
         new_fix_in_frame = item._fix_in_frame
-        new_points = item.points._points.data
-        new_radius = item.radius._radii.data
-        new_stroke = item.stroke._rgbas.data
-        new_fill = item.fill._rgbas.data
+        new_radius = item.radius._radii._data
+        new_stroke = item.stroke._rgbas._data
+        new_fill = item.fill._rgbas._data
+        new_glow_size = item.glow._size
 
         is_camera_changed = new_camera_info is not self.prev_camera_info
 
         if new_fix_in_frame != self.prev_fix_in_frame \
                 or new_radius is not self.prev_radius \
+                or new_glow_size != self.prev_glow_size \
                 or new_points is not self.prev_points \
                 or is_camera_changed:
             corners = np.array(item.points.self_box.get_corners())
@@ -133,6 +150,8 @@ class VItemRenderer(Renderer):
             clip_box *= render_data.camera_info.frame_radius
 
             buff = new_radius.max() + render_data.anti_alias_radius
+            if item.glow._rgba._data[3] != 0:
+                buff = max(buff, new_glow_size)
             clip_min = np.min(clip_box, axis=0) - buff
             clip_max = np.max(clip_box, axis=0) + buff
             clip_box = np.array([
@@ -146,6 +165,8 @@ class VItemRenderer(Renderer):
             bytes = clip_box.astype(np.float32).tobytes()
             assert len(bytes) == self.vbo_coord.size
             self.vbo_coord.write(bytes)
+
+            self.prev_glow_size = new_glow_size
 
         if new_radius is not self.prev_radius or len(new_points) != len(self.prev_points):
             radius = resize_with_interpolation(new_radius, (len(new_points) + 1) // 2)
@@ -169,6 +190,9 @@ class VItemRenderer(Renderer):
             self.vbo_stroke_color.write(bytes)
             self.prev_stroke = new_stroke
 
+        if new_fill is not self.prev_fill:
+            self.fill_transparent = item.fill.is_transparent()
+
         if new_fill is not self.prev_fill or len(new_points) != len(self.prev_points):
             fill = resize_with_interpolation(new_fill, (len(new_points) + 1) // 2)
             assert fill.dtype == np.float32
@@ -181,10 +205,12 @@ class VItemRenderer(Renderer):
             self.prev_fill = new_fill
 
         if new_points is not self.prev_points:
-            bytes = np.hstack([
-                new_points,
-                item.points.get_closepath_flags()[:, np.newaxis].astype(np.float32)
-            ]).tobytes()
+            if len(self.points_vec4buffer) != len(new_points):
+                self.points_vec4buffer = np.empty((len(new_points), 4), dtype=np.float32)
+
+            self.points_vec4buffer[:, :3] = new_points
+            self.points_vec4buffer[:, 3] = item.points.get_closepath_flags().astype(np.float32)
+            bytes = self.points_vec4buffer.tobytes()
 
             if len(bytes) != self.vbo_points.size:
                 self.vbo_points.orphan(len(bytes))
@@ -199,7 +225,7 @@ class VItemRenderer(Renderer):
 
             self.vbo_points.bind_to_storage_buffer(0)
             self.vbo_mapped_points.bind_to_storage_buffer(1)
-            self.update_fix_in_frame(item, self.comp)
+            self.update_fix_in_frame(self.comp_u_fix, item)
             self.comp.run(group_x=(len(new_points) + 255) // 256)   # 相当于 len() / 256 向上取整
 
             self.prev_fix_in_frame = new_fix_in_frame
@@ -210,14 +236,22 @@ class VItemRenderer(Renderer):
         self.vbo_radius.bind_to_storage_buffer(1)
         self.vbo_stroke_color.bind_to_storage_buffer(2)
         self.vbo_fill_color.bind_to_storage_buffer(3)
-        self.update_fix_in_frame(item, self.prog)
-        self.prog['stroke_background'] = item.stroke_background
+
+        self.update_fix_in_frame(self.u_fix, item)
+        self.u_stroke_background = item.stroke_background
+        self.u_is_fill_transparent = self.fill_transparent
+        self.u_glow_color.write(item.glow._rgba._data.tobytes())
+        self.u_glow_size = new_glow_size
+
         self.vao.render(mgl.TRIANGLE_STRIP)
 
 
 class ImageItemRenderer(Renderer):
     def init(self) -> None:
         self.prog = get_program('render/shaders/image')
+
+        self.u_fix = self.get_u_fix_in_frame(self.prog)
+        self.u_image = self.prog['image']
 
         self.ctx = self.data_ctx.get().ctx
         self.vbo_points = self.ctx.buffer(reserve=4 * 3 * 4)
@@ -269,16 +303,19 @@ class ImageItemRenderer(Renderer):
             self.texture.build_mipmaps()
             self.prev_img = item.image.img
 
-        self.prog['image'] = 0
+        self.u_image.value = 0
         self.texture.filter = item.image.get_filter()
         self.texture.use(0)
-        self.update_fix_in_frame(item, self.prog)
+        self.update_fix_in_frame(self.u_fix, item)
         self.vao.render(mgl.TRIANGLE_STRIP)
 
 
 class VideoRenderer(Renderer):
     def init(self) -> None:
         self.prog = get_program('render/shaders/image')
+
+        self.u_fix = self.get_u_fix_in_frame(self.prog)
+        self.u_image = self.prog['image']
 
         self.ctx = self.data_ctx.get().ctx
         self.vbo_points = self.ctx.buffer(reserve=4 * 3 * 4)
@@ -328,10 +365,10 @@ class VideoRenderer(Renderer):
             self.prev_points = new_points
 
         self.update_texture(item)
-        self.prog['image'] = 0
+        self.u_image.value = 0
         self.texture.filter = item.min_mag_filter
         self.texture.use(0)
-        self.update_fix_in_frame(item, self.prog)
+        self.update_fix_in_frame(self.u_fix, item)
         self.vao.render(mgl.TRIANGLE_STRIP)
 
     def update_texture(self, item: Video) -> None:

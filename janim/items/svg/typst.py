@@ -12,9 +12,9 @@ import numpy as np
 from janim.constants import ORIGIN, UP
 from janim.exception import (EXITCODE_TYPST_COMPILE_ERROR,
                              EXITCODE_TYPST_NOT_FOUND, ExitException,
-                             InvalidOrdinalError)
+                             InvalidOrdinalError, PatternMismatchError)
 from janim.items.points import Group
-from janim.items.svg.svg_item import SVGItem
+from janim.items.svg.svg_item import SVGElemItem, SVGItem
 from janim.items.vitem import VItem
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
@@ -32,6 +32,9 @@ class TypstDoc(SVGItem):
     '''
     Typst 文档
     '''
+
+    group_key = 'data-typst-label'
+
     def __init__(self, text: str, **kwargs):
         self.text = text
 
@@ -88,6 +91,9 @@ class TypstDoc(SVGItem):
         return obj if isinstance(obj, TypstDoc) else cls(obj)
 
     # region pattern-matching
+
+    def get_label(self, name: str) -> Group[SVGElemItem]:
+        return Group.from_iterable(self.groups[name])
 
     def match_pattern(
         self,
@@ -244,14 +250,25 @@ class TypstDoc(SVGItem):
         pattern = self.typstify(pattern)
         indices = self.indices(pattern)
 
+        if not indices:
+            raise PatternMismatchError(
+                _('No matches found for {pattern}')
+                .format(pattern=repr(pattern.text))
+            )
+
+        def get_slice(i: int):
+            if not 0 <= i < len(indices):
+                raise PatternMismatchError(
+                    _('{ordinal} is out of range for {count} matches')
+                    .format(ordinal=i, count=len(indices))
+                )
+            return slice(indices[i], indices[i] + len(pattern))
+
         match ordinal:
             case int(i):
-                return slice(indices[i], indices[i] + len(pattern))
-            case _ if isinstance(ordinal, Iterable):
-                return [
-                    slice(indices[i], indices[i] + len(pattern))
-                    for i in ordinal
-                ]
+                return get_slice(i)
+            case _ if isinstance(ordinal, Iterable) and all(isinstance(i, int) for i in ordinal):
+                return [get_slice(i) for i in ordinal]
             case types.EllipsisType():
                 return [
                     slice(i, i + len(pattern))
