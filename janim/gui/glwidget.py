@@ -5,6 +5,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
 from janim.anims.timeline import TimelineAnim
+from janim.render.base import check_pyopengl_if_required
 
 
 class GLWidget(QOpenGLWidget):
@@ -41,6 +42,7 @@ class GLWidget(QOpenGLWidget):
 
     def initializeGL(self) -> None:
         self.ctx = mgl.create_context()
+        check_pyopengl_if_required(self.ctx)
         self.ctx.enable(mgl.BLEND)
         self.ctx.blend_func = (
             mgl.SRC_ALPHA, mgl.ONE_MINUS_SRC_ALPHA,

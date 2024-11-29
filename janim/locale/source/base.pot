@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-11-29 21:26+0800\n"
+"POT-Creation-Date: 2024-11-29 22:14+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,6 +16,14 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: janim\utils\config.py:28
-msgid "{attrname}={value!r} is incompatible with type {typename}"
+#: janim\render\base.py:203
+msgid ""
+"An additional module is required to be compatible with OpenGL {version} "
+"(lower than OpenGL 4.3), but it is not installed"
+msgstr ""
+
+#: janim\render\base.py:207
+msgid ""
+"You can install it using \"pip install PyOpenGL\" and make sure you install "
+"it in the correct Python version"
 msgstr ""
