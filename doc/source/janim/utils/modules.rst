@@ -6,13 +6,13 @@ utils
 .. toctree::
    :maxdepth: 1
 
+   font/modules.rst
    bezier
    config
    data
    deprecation
    dict_ops
    file_ops
-   font
    font_manager
    iterables
    paths

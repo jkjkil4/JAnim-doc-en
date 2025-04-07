@@ -75,10 +75,10 @@ $ cal(A) :=
 #let x = 5
 $ #x < 17 $
 
-The difference between #text(green)[`TypstDoc`] and #text(green)[`Typst`]:
+The difference between #text(green)[`TypstDoc`] and #text(green)[`TypstMath`]:
 - #text(green)[`TypstDoc`] automatically align to the top of view,
   so you can see the document from the start.
-- The content of #text(green)[`Typst`] is wrapped by math environment
+- The content of #text(green)[`TypstMath`] is wrapped by math environment
   and move to the center by default.
 '''
 
@@ -86,7 +86,7 @@ The difference between #text(green)[`TypstDoc`] and #text(green)[`Typst`]:
 class TypstExample(Timeline):
     def construct(self) -> None:
         doc = TypstDoc(typst_doc)
-        typ = Typst('sum_(i=1)^n x_i')
+        typ = TypstMath('sum_(i=1)^n x_i')
 
         # Applying animations on text is slow
         self.play(Write(doc), duration=4)
@@ -100,7 +100,7 @@ class TypstExample(Timeline):
 
 class AnimatingPiExample(Timeline):
     def construct(self) -> None:
-        grid = Typst('pi') * 100
+        grid = TypstMath('pi') * 100
         grid.points.scale(2).arrange_in_grid(10, 10, buff=0.2)
         grid.show()
 
@@ -140,11 +140,11 @@ class NumberPlaneExample(Timeline):
         self.forward()
 
         self.play(
-            sin_graph.anim(),
             plane.anim.points.apply_matrix([
                 [3, -1],
                 [1, 2]
             ]),
+            sin_graph.anim(),
             duration=2
         )
         self.forward()
@@ -185,3 +185,90 @@ class UpdaterExample(Timeline):
             duration=5
         )
         self.forward()
+
+
+class MarkedSquare(MarkedItem, Square):
+    def __init__(self, side_length: float = 2.0, **kwargs):
+        super().__init__(side_length, **kwargs)
+        self.mark.set_points([RIGHT * side_length / 4, DOWN * side_length / 4])
+
+
+class MarkedItemExample(Timeline):
+    def construct(self):
+        square = MarkedSquare()
+
+        tri1 = Triangle(radius=0.2, color=GREEN)
+        tri2 = Triangle(radius=0.2, color=BLUE)
+        dots = DotCloud(color=RED)
+
+        self.play(
+            square.update.points.rotate(TAU),
+            DataUpdater(
+                square,
+                lambda data, p: data.points.shift(RIGHT * math.sin(4 * math.pi * p.alpha))
+            ),
+
+            DataUpdater(
+                tri1,
+                lambda data, p: data.mark.set(square.current().mark.get())
+            ),
+            DataUpdater(
+                tri2,
+                lambda data, p: data.mark.set(square.current().mark.get(index=1))
+            ),
+            DataUpdater(
+                dots,
+                lambda data, p: data.points.set(square.current().mark.get_points()),
+                skip_null_items=False
+            ),
+            duration=4
+        )
+
+
+class FrameEffectExample(Timeline):
+    def construct(self):
+        squares = Square(0.5, color=BLUE, fill_alpha=0.3) * 49
+        squares.points.arrange_in_grid()
+
+        effect1 = SimpleFrameEffect(    # (2~8s) [::2] 的方块产生渐变色
+            squares[::2],
+            shader='''
+            f_color = texture(fbo, v_texcoord);
+            f_color.gb *= v_texcoord;
+            '''
+        )
+
+        effect2 = SimpleFrameEffect(    # (4~8s) [1::2] 的方块产生故障效果
+            squares[1::2],
+            shader='''
+            vec2 uv = v_texcoord;
+
+            float glitchStrength = sin(time) * 0.02;
+            vec2 offset = vec2(glitchStrength, 0.0);
+
+            float r = texture(fbo, uv + offset).r;
+            float g = texture(fbo, uv).g;
+            float b = texture(fbo, uv - offset).b;
+            float a = max(texture(fbo, uv + offset).a, max(texture(fbo, uv).a, texture(fbo, uv - offset).a));
+
+            float lineNoise = step(0.5, fract(uv.y * 10.0 + time));
+            r *= lineNoise;
+            b *= lineNoise;
+
+            f_color = vec4(r, g, b, a);
+            ''',
+            uniforms=['float time']
+        )
+
+
+        self.schedule(2, effect1.show)
+
+        self.play(
+            Rotate(squares, TAU, duration=8),
+            DataUpdater(
+                effect2,
+                lambda data, p: data.apply_uniforms(time=p.global_t - p.range.at),
+                at=4,
+                duration=4
+            )
+        )

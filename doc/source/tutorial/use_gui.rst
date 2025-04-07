@@ -103,7 +103,7 @@
 子物件选择
 ~~~~~~~~~~~~
 
-对于子物件复杂的物件（比如 :class:`~.Text` 和 :class:`~.Typst`），
+对于子物件复杂的物件（比如 :class:`~.Text` 和 :class:`~.TypstMath`），
 取其切片就会比较麻烦，因此预览界面提供了进行子物件选择的功能
 
 点击窗口左上角“功能”中的“子物件选择”，左上角会多出这样的内容：
@@ -198,7 +198,14 @@
 
 提供了字体索引列表，方便查找字体
 
-- 其中“调用名称”也就是可以给 :class:`~.Text` 传入的 ``font`` 参数
+- 其中“字体族名”和“全名”都是可以传给 :class:`~.Text` 的 ``font`` 参数，例如：
+
+.. code-block:: python
+
+    Text(..., font='LXGW WenKai Lite')
+    Text(..., font='LXGW WenKai Lite', weight='light')
+    Text(..., font='LXGW WenKai Lite Light')
+
 - 善用搜索功能，可以方便地根据字体名称进行查找
 
 .. tip::

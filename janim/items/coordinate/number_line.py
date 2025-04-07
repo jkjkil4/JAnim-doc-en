@@ -7,7 +7,7 @@ from janim.constants import DOWN, GREY_B, LEFT, MED_SMALL_BUFF, RIGHT, UP
 from janim.items.geometry.arrow import ArrowTip
 from janim.items.geometry.line import Line
 from janim.items.points import Group
-from janim.items.text.text import Text
+from janim.items.text import Text
 from janim.typing import JAnimColor, RangeSpecifier
 from janim.utils.bezier import interpolate, outer_interpolate
 from janim.utils.dict_ops import merge_dicts_recursively
@@ -242,7 +242,7 @@ class NumberLine(Line):
         - 多个数，得到一组坐标，分别表示这些数在坐标轴上的位置；
           例如 ``n2p([0, 2, 4])`` 分别得到 0、2、4 在坐标轴上的位置
         '''
-        if not isinstance(number, float):
+        if not isinstance(number, (int, float)):
             number = np.asarray(number)
         alpha = (number - self.x_min) / (self.x_max - self.x_min)
         return outer_interpolate(self.points.get_start(), self.points.get_end(), alpha)

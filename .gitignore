@@ -10,5 +10,6 @@
 !/.gitignore
 !/.readthedocs.yaml
 !/pyproject.toml
+!/LICENSE
 
 __pycache__

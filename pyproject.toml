@@ -21,6 +21,7 @@ dependencies = [
     "colour",
     "rich",
     "moderngl",
+    "PyOpenGL",
     "tqdm",
     "psutil",
     "skia-pathops",
@@ -40,9 +41,13 @@ gui = [
 doc = [
     "sphinx",
     "sphinx-copybutton",
+    "sphinx-tabs",
     "furo",
     "jinja2",
     "docutils",
+]
+test = [
+    "opencv-python",
 ]
 
 [tool.flit.sdist]

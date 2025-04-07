@@ -9,13 +9,14 @@ items
    coordinate/modules.rst
    geometry/modules.rst
    svg/modules.rst
-   text/modules.rst
    audio
    boolean_ops
+   frame_effect
    image_item
    item
    points
    relation
    shape_matchers
+   text
    value_tracker
    vitem

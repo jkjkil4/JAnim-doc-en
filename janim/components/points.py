@@ -6,6 +6,7 @@ from typing import Callable, Iterable, Self
 import numpy as np
 
 import janim.utils.refresh as refresh
+from janim.anims.method_updater_meta import register_updater
 from janim.components.component import Component
 from janim.constants import (DEFAULT_ITEM_TO_EDGE_BUFF,
                              DEFAULT_ITEM_TO_ITEM_BUFF, DOWN, IN, LEFT,
@@ -102,7 +103,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         '''
         point_datas = [
             cmpt.get()
-            for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(timed=True)
+            for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock()
         ]
         return np.vstack(point_datas)
 
@@ -113,8 +114,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         使用形如 ``.set([[1.5, 3, 2], [2, 1.5, 0]])`` 的形式
         '''
-        if not isinstance(points, np.ndarray):
-            points = np.array(points)
+        points = np.asarray(points)
         if points.size == 0:
             points = np.zeros((0, 3))
 
@@ -211,14 +211,14 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
     @property
     @set.self_refresh_with_recurse(recurse_up=True)
-    @refresh.register(fallback_check=Component.fallback_check)
+    @refresh.register
     def box(self) -> BoundingBox:
         '''
         表示物件（包括后代物件）的矩形包围框
         '''
         box_datas = [
             cmpt.self_box.data
-            for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(timed=True)
+            for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock()
             if cmpt.has()
         ]
         return self.BoundingBox(np.vstack(box_datas) if box_datas else [])
@@ -488,6 +488,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         )
         return self
 
+    @register_updater(
+        lambda self, p, angle, **kwargs:
+            self.rotate(angle * p.alpha, **kwargs),
+        grouply=True
+    )
     def rotate(
         self,
         angle: float,
@@ -529,6 +534,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         )
         return self
 
+    @register_updater(
+        lambda self, p, scale_factor, **kwargs:
+            self.scale((np.asarray(scale_factor) - 1) * p.alpha + 1, **kwargs),
+        grouply=True
+    )
     def scale(
         self,
         scale_factor: float | Iterable,
@@ -546,7 +556,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         '''
         if isinstance(scale_factor, Iterable):
             sgn = np.sign(scale_factor)
-            scale_factor = sgn * abs(np.array(scale_factor)).clip(min=min_scale_factor)
+            scale_factor = sgn * abs(np.asarray(scale_factor)).clip(min=min_scale_factor)
         else:
             if scale_factor >= 0:
                 scale_factor = max(scale_factor, min_scale_factor)
@@ -561,6 +571,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         )
         return self
 
+    @register_updater(
+        lambda self, p, factor, **kwargs:
+            self.stretch((factor - 1) * p.alpha + 1, **kwargs),
+        grouply=True
+    )
     def stretch(
         self,
         factor: float,
@@ -733,6 +748,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         return self
 
+    @register_updater(
+        lambda self, p, factor=0.2, direction=RIGHT, **kwargs:
+            self.shear(factor * p.alpha, direction, **kwargs),
+        grouply=True
+    )
     def shear(
         self,
         factor: float = 0.2,
@@ -791,6 +811,10 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
     # region 位移 | movement
 
+    @register_updater(
+        lambda self, p, vector, *, root_only=False:
+            self.shift(np.asarray(vector) * p.alpha, root_only=root_only)
+    )
     def shift(self, vector: Vect, *, root_only=False) -> Self:
         '''
         相对移动 ``vector`` 向量
@@ -856,8 +880,8 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         .. code-block:: python
 
-            t1 = Typst('x^2 + y^2')
-            t2 = Typst('x + y')
+            t1 = TypstMath('x^2 + y^2')
+            t2 = TypstMath('x + y')
             t2.points.move_to_by_indicator(t2[1], t1[2])
 
         可以将 ``t2`` 移动至 ``t1`` 的位置，
@@ -1031,7 +1055,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         return self
 
-    def to_center(self, root_only=False) -> Self:
+    def to_center(self, *, root_only=False) -> Self:
         '''
         移动到原点 ``(0, 0, 0)``
         '''
@@ -1068,6 +1092,8 @@ class Cmpt_Points[ItemT](Component[ItemT]):
             cmpt = src.get_same_cmpt(target)
             box = cmpt.self_box if item_root_only else cmpt.box
             target = box.get(aligned_edge + direction)
+
+        direction = np.asarray(direction)
 
         point_to_align = (src.self_box if root_only else src.box).get(aligned_edge - direction)
         return (target - point_to_align + buff * direction) * coor_mask

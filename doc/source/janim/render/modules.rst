@@ -7,6 +7,13 @@ render
    :maxdepth: 1
 
    base
-   impl
+   framebuffer
+   program
+   renderer_dotcloud
+   renderer_frameeffect
+   renderer_imageitem
+   renderer_video
+   renderer_vitem
    texture
+   uniform
    writer

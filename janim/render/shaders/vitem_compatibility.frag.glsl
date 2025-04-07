@@ -21,6 +21,10 @@ uniform samplerBuffer radii;    // radii[idx / 4][idx % 4]
 uniform samplerBuffer colors;
 uniform samplerBuffer fills;
 
+// used by JA_FINISH_UP
+uniform bool JA_BLENDING;
+uniform sampler2D JA_FRAMEBUFFER;
+
 vec2 get_point(int idx) {
     return texelFetch(points, idx).xy;
 }
@@ -168,7 +172,7 @@ void main()
     #ifdef CONTROL_POINTS
 
     d = distance(v_coord, get_point(0));
-    for (int i = 1; i < points.length(); i++) {
+    for (int i = 1; i < lim; i++) {
         d = min(d, distance(v_coord, get_point(i)));
     }
     if (d < 0.06) {
@@ -223,7 +227,11 @@ void main()
         if (is_fill_transparent) {
             factor = 1 - d / glow_size;
         } else {
-            factor = 1 - sgn_d / glow_size;
+            if (sgn_d >= 0) {
+                factor = 1 - sgn_d / glow_size;
+            } else {
+                factor = 1 - (-sgn_d) / JA_ANTI_ALIAS_RADIUS / 2;
+            }
         }
         if (0 < factor && factor <= 1) {
             vec4 f_glow_color = glow_color;
@@ -249,9 +257,8 @@ void main()
 
     #ifdef POLYGON_LINES
 
-    const int num = points.length();
     d = dot(v_coord - get_point(0), v_coord - get_point(0));
-    for(int i = 1, j = 0; i < num; j = i, i++)
+    for(int i = 1, j = 0; i < lim; j = i, i++)
     {
         if (get_point(j) == get_point(i)) {
             i++;
@@ -268,4 +275,6 @@ void main()
     f_color.a = max(line_ratio, f_color.a);
 
     #endif
+
+    #[JA_FINISH_UP]
 }

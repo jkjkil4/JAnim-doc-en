@@ -22,6 +22,7 @@ release = __version__
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx_copybutton',
+    'sphinx_tabs.tabs',
     'extensions.janim_example_ext',
     'extensions.code_desc_ext'
 ]
@@ -29,7 +30,7 @@ autodoc_member_order = 'bysource'
 # autodoc_default_flags = ['members', 'show-inheritance']
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns = ['._*', '**/._*']
 
 language = 'zh_CN'
 locale_dirs = ['locales/']

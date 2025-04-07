@@ -2,18 +2,23 @@ import os
 import shutil
 import subprocess as sp
 import time
+from contextlib import contextmanager
 from functools import partial
+from typing import Generator
 
-import moderngl as mgl
+import OpenGL.GL as gl
 from tqdm import tqdm as ProgressDisplay
 
-from janim.anims.timeline import Timeline, TimelineAnim, TimeRange
+from janim.anims.timeline import BuiltTimeline, Timeline, TimeRange
 from janim.exception import EXITCODE_FFMPEG_NOT_FOUND, ExitException
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
-from janim.render.base import check_pyopengl_if_required
+from janim.render.base import create_context
+from janim.render.framebuffer import create_framebuffer, framebuffer_context
 
 _ = get_local_strings('writer')
+
+PBO_COUNT = 3
 
 
 class VideoWriter:
@@ -29,66 +34,128 @@ class VideoWriter:
     - 最后结束 ffmpeg 的调用，完成 _temp 文件的输出
     - 将 _temp 文件改名，删去 "_temp" 后缀，完成视频输出
     '''
-    def __init__(self, anim: TimelineAnim):
-        self.anim = anim
+    def __init__(self, built: BuiltTimeline):
+        self.built = built
         try:
-            self.ctx = mgl.create_standalone_context(require=430)
+            self.ctx = create_context(standalone=True, require=430)
         except ValueError:
-            self.ctx = mgl.create_standalone_context(require=330)
-        check_pyopengl_if_required(self.ctx)
-        self.ctx.enable(mgl.BLEND)
-        self.ctx.blend_func = (
-            mgl.SRC_ALPHA, mgl.ONE_MINUS_SRC_ALPHA,
-            mgl.ONE, mgl.ONE
-        )
-        self.ctx.blend_equation = mgl.FUNC_ADD, mgl.MAX
+            self.ctx = create_context(standalone=True, require=330)
 
-        pw, ph = anim.cfg.pixel_width, anim.cfg.pixel_height
-        self.fbo = self.ctx.framebuffer(
-            color_attachments=self.ctx.texture(
-                (pw, ph),
-                components=4,
-                samples=0,
-            ),
-            depth_attachment=self.ctx.depth_renderbuffer(
-                (pw, ph),
-                samples=0
-            )
-        )
+        pw, ph = built.cfg.pixel_width, built.cfg.pixel_height
+        self.frame_count = round(built.duration * built.cfg.fps) + 1
+        self.fbo = create_framebuffer(self.ctx, pw, ph)
+
+        # PBO 相关初始化
+        self.byte_size = pw * ph * 4  # 每帧的字节大小 (RGBA)
+
+    def _init_pbos(self) -> None:
+        '''初始化PBO缓冲区'''
+        self.pbos = gl.glGenBuffers(PBO_COUNT)
+
+        for pbo in self.pbos:
+            gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, pbo)
+            # 分配空间，GL_STREAM_READ 表明数据将从 GPU 读取到 CPU，并且每帧都会更新
+            gl.glBufferData(gl.GL_PIXEL_PACK_BUFFER, self.byte_size, None, gl.GL_STREAM_READ)
+
+        gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, 0)  # 解绑PBO
+
+    def _read_idx_iter(self) -> Generator[int | None, None, None]:
+        for _ in range(PBO_COUNT - 1):
+            yield None
+        for frame_idx in range(self.frame_count):
+            yield frame_idx % PBO_COUNT
+
+    def _cleanup_pbos(self) -> None:
+        gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, 0)  # 确保解绑
+        # 正确删除多个缓冲区
+        gl.glDeleteBuffers(len(self.pbos), self.pbos)
 
     @staticmethod
-    def writes(anim: TimelineAnim, file_path: str, *, quiet=False) -> None:
-        VideoWriter(anim).write_all(file_path, quiet=quiet)
+    def writes(built: BuiltTimeline, file_path: str, *, quiet=False, use_pbo=True, hwaccel=False) -> None:
+        VideoWriter(built).write_all(file_path, quiet=quiet, use_pbo=use_pbo, hwaccel=hwaccel)
 
-    def write_all(self, file_path: str, *, quiet=False, _keep_temp: bool = False) -> None:
+    def write_all(self, file_path: str, *, quiet=False, use_pbo=True, hwaccel=False, _keep_temp=False) -> None:
         '''将时间轴动画输出到文件中
 
         - 指定 ``quiet=True``，则不会输出前后的提示信息，但仍有进度条
         '''
-        name = self.anim.timeline.__class__.__name__
+        name = self.built.timeline.__class__.__name__
         if not quiet:
             log.info(_('Writing video "{name}"').format(name=name))
             t = time.time()
 
-        self.fbo.use()
-        fps = self.anim.cfg.fps
+        fps = self.built.cfg.fps
 
-        self.open_video_pipe(file_path)
+        self.open_video_pipe(file_path, hwaccel)
 
         progress_display = ProgressDisplay(
-            range(round(self.anim.global_range.duration * fps) + 1),
+            range(self.frame_count),
             leave=False,
             dynamic_ncols=True
         )
 
-        rgb = self.anim.cfg.background_color.rgb
+        rgb = self.built.cfg.background_color.rgb
 
-        for frame in progress_display:
-            self.fbo.clear(*rgb)
-            self.anim.anim_on(frame / fps)
-            self.anim.render_all(self.ctx)
-            bytes = self.fbo.read(components=4)
-            self.writing_process.stdin.write(bytes)
+        transparent = self.ext == '.mov'
+
+        if use_pbo:
+            self._init_pbos()
+
+            # 使用PBO优化的渲染循环
+            with framebuffer_context(self.fbo):
+                read_idx_iter = self._read_idx_iter()
+                for frame_idx, read_idx in zip(progress_display, read_idx_iter):
+                    # 渲染当前帧
+                    self.fbo.clear(*rgb, not transparent)
+                    if transparent:
+                        gl.glFlush()
+                    self.built.render_all(self.ctx, frame_idx / fps, blend_on=not transparent)
+
+                    # 绑定当前PBO来存储新帧
+                    gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, self.pbos[frame_idx % PBO_COUNT])
+                    # 注意: 当PBO绑定时，最后一个参数是偏移量而不是指针
+                    gl.glReadPixels(0, 0, self.built.cfg.pixel_width, self.built.cfg.pixel_height,
+                                    gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, 0)
+
+                    # 如果不是第一批，处理上一批的数据
+                    if read_idx is not None:
+                        # 绑定对应的PBO，用于读取数据
+                        gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, self.pbos[read_idx])
+
+                        # 使用numpy从映射的内存中读取数据
+                        ptr = gl.glMapBuffer(gl.GL_PIXEL_PACK_BUFFER, gl.GL_READ_ONLY)
+                        assert ptr
+                        data = gl.ctypes.string_at(ptr, self.byte_size)
+                        # 写入数据到ffmpeg
+                        self.writing_process.stdin.write(data)
+                        gl.glUnmapBuffer(gl.GL_PIXEL_PACK_BUFFER)
+
+                # 处理最后一批
+                for read_idx in read_idx_iter:
+                    # 在大多数情况下 read_idx 并不是 None
+                    # 只有在 Timeline 时长特别短的时候会出现 None
+                    if read_idx is None:
+                        continue
+                    gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, self.pbos[read_idx])
+                    data = gl.glGetBufferSubData(gl.GL_PIXEL_PACK_BUFFER, 0, self.byte_size)
+                    self.writing_process.stdin.write(data)
+
+            self._cleanup_pbos()
+        else:
+            # 原始渲染循环（不使用PBO）
+            with framebuffer_context(self.fbo):
+                for frame in progress_display:
+                    self.fbo.clear(*rgb, not transparent)
+                    # 在输出 mov 时，framebuffer 是透明的
+                    # 为了颜色能被正确渲染到透明 framebuffer 上
+                    # 这里需要禁用自带 blending 的并使用 shader 里自定义的 blending（参考 program.py 的 injection_ja_finish_up）
+                    # 但是 shader 里的 blending 依赖 framebuffer 信息
+                    # 所以这里需要使用 glFlush 更新 framebuffer 信息使得正确渲染
+                    if transparent:
+                        gl.glFlush()
+                    self.built.render_all(self.ctx, frame / fps, blend_on=not transparent)
+                    bytes = self.fbo.read(components=4)
+                    self.writing_process.stdin.write(bytes)
 
         self.close_video_pipe(_keep_temp)
 
@@ -104,47 +171,75 @@ class VideoWriter:
                     .format(file_path=file_path)
                 )
 
-    def open_video_pipe(self, file_path: str) -> None:
-        stem, ext = os.path.splitext(file_path)
+    def open_video_pipe(self, file_path: str, hwaccel: bool) -> None:
+        stem, self.ext = os.path.splitext(file_path)
         self.final_file_path = file_path
-        self.temp_file_path = stem + '_temp' + ext
+        self.temp_file_path = stem + '_temp' + self.ext
 
         command = [
-            self.anim.cfg.ffmpeg_bin,
+            self.built.cfg.ffmpeg_bin,
             '-y',   # overwrite output file if it exists
             '-f', 'rawvideo',
-            '-s', f'{self.anim.cfg.pixel_width}x{self.anim.cfg.pixel_height}',  # size of one frame
+            '-s', f'{self.built.cfg.pixel_width}x{self.built.cfg.pixel_height}',  # size of one frame
             '-pix_fmt', 'rgba',
-            '-r', str(self.anim.cfg.fps),  # frames per second
+            '-r', str(self.built.cfg.fps),  # frames per second
             '-i', '-',  # The input comes from a pipe
             '-vf', 'vflip',
             '-an',  # Tells FFMPEG not to expect any audio
             '-loglevel', 'error',
         ]
 
-        if ext == '.mp4':
+        if self.ext == '.mp4':
             command += [
-                '-vcodec', 'libx264',
                 '-pix_fmt', 'yuv420p',
+                '-vcodec', self.find_encoder(self.built.cfg.ffmpeg_bin, hwaccel),
             ]
-        elif ext == '.mov':
+        elif self.ext == '.mov':
             # This is if the background of the exported
             # video should be transparent.
             command += [
                 '-vcodec', 'qtrle',
             ]
-        elif ext == '.gif':
+        elif self.ext == '.gif':
             pass
         else:
             assert False
 
         command += [self.temp_file_path]
-        try:
+        with self.handle_ffmpeg_not_found():
             self.writing_process = sp.Popen(command, stdin=sp.PIPE)
-        except FileNotFoundError:
-            log.error(_('Unable to output video. '
-                        'Please install ffmpeg and add it to the environment variables.'))
-            raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
+
+    hwencoder_cache: str | None = None
+
+    @staticmethod
+    def find_encoder(ffmpeg_bin: str, hwaccel: bool) -> str:
+        '''查找编码器，若 ``hwaccel=True`` 则优先使用硬件编码器'''
+        if not hwaccel:
+            encoder = 'libx264'
+        else:
+            if VideoWriter.hwencoder_cache is not None:
+                encoder = VideoWriter.hwencoder_cache
+            else:
+                # call ffmpeg to test nvenc/amf support
+                with VideoWriter.handle_ffmpeg_not_found():
+                    test_availability = sp.Popen(
+                        [ffmpeg_bin, '-hide_banner', '-encoders'],
+                        stdout=sp.PIPE,
+                        stderr=sp.PIPE
+                    )
+
+                out, err = test_availability.communicate()
+                if b'h264_nvenc' in out:
+                    encoder = 'h264_nvenc'
+                elif b'h264_amf' in out:
+                    encoder = 'h264_amf'
+                else:
+                    encoder = 'libx264'
+                    log.info(_('No hardware encoder found'))
+                VideoWriter.hwencoder_cache = encoder
+
+        log.info(_('Using {encoder} for encoding').format(encoder=encoder))
+        return encoder
 
     def close_video_pipe(self, _keep_temp: bool) -> None:
         self.writing_process.stdin.close()
@@ -153,33 +248,43 @@ class VideoWriter:
         if not _keep_temp:
             shutil.move(self.temp_file_path, self.final_file_path)
 
+    @staticmethod
+    @contextmanager
+    def handle_ffmpeg_not_found():
+        try:
+            yield
+        except FileNotFoundError:
+            log.error(_('Unable to output video. '
+                        'Please install ffmpeg and add it to the environment variables.'))
+            raise ExitException(EXITCODE_FFMPEG_NOT_FOUND)
+
 
 class AudioWriter:
-    def __init__(self, anim: TimelineAnim):
-        self.anim = anim
+    def __init__(self, built: BuiltTimeline):
+        self.built = built
 
     @staticmethod
-    def writes(anim: TimelineAnim, file_path: str, *, quiet=False) -> None:
-        AudioWriter(anim).write_all(file_path, quiet=quiet)
+    def writes(built: BuiltTimeline, file_path: str, *, quiet=False) -> None:
+        AudioWriter(built).write_all(file_path, quiet=quiet)
 
-    def write_all(self, file_path: str, *, quiet=False, _keep_temp: bool = False) -> None:
-        name = self.anim.timeline.__class__.__name__
+    def write_all(self, file_path: str, *, quiet=False, _keep_temp=False) -> None:
+        name = self.built.timeline.__class__.__name__
         if not quiet:
             log.info(_('Writing audio of "{name}"').format(name=name))
             t = time.time()
 
-        fps = self.anim.cfg.fps
-        framerate = self.anim.cfg.audio_framerate
+        fps = self.built.cfg.fps
+        framerate = self.built.cfg.audio_framerate
 
         self.open_audio_pipe(file_path)
 
         progress_display = ProgressDisplay(
-            range(round(self.anim.global_range.duration * fps) + 1),
+            range(round(self.built.duration * fps) + 1),
             leave=False,
             dynamic_ncols=True
         )
 
-        get_audio_samples = partial(self.anim.timeline.get_audio_samples_of_frame,
+        get_audio_samples = partial(self.built.get_audio_samples_of_frame,
                                     fps,
                                     framerate)
 
@@ -207,11 +312,11 @@ class AudioWriter:
         self.temp_file_path = stem + '_temp' + ext
 
         command = [
-            self.anim.cfg.ffmpeg_bin,
+            self.built.cfg.ffmpeg_bin,
             '-y',   # overwrite output file if it exists
             '-f', 's16le',
-            '-ar', str(self.anim.cfg.audio_framerate),      # framerate & samplerate
-            '-ac', str(self.anim.cfg.audio_channels),
+            '-ar', str(self.built.cfg.audio_framerate),      # framerate & samplerate
+            '-ac', str(self.built.cfg.audio_channels),
             '-i', '-',
             '-loglevel', 'error',
             self.temp_file_path
@@ -237,7 +342,9 @@ def merge_video_and_audio(
     video_path: str,
     audio_path: str,
     result_path: str,
-    remove: bool = True
+    remove: bool = True,
+    *,
+    quiet: bool = False,
 ) -> None:
     command = [
         ffmpeg_bin,
@@ -265,19 +372,20 @@ def merge_video_and_audio(
         os.remove(video_path)
         os.remove(audio_path)
 
-    log.info(
-        _('File saved to "{file_path}" (merged)')
-        .format(file_path=result_path)
-    )
+    if not quiet:
+        log.info(
+            _('File saved to "{file_path}" (merged)')
+            .format(file_path=result_path)
+        )
 
 
 class SRTWriter:
     @staticmethod
-    def writes(anim: TimelineAnim, file_path: str) -> None:
+    def writes(built: BuiltTimeline, file_path: str) -> None:
         with open(file_path, 'wt') as file:
             chunks: list[tuple[TimeRange, list[Timeline.SubtitleInfo]]] = []
 
-            for info in anim.timeline.subtitle_infos:
+            for info in built.timeline.subtitle_infos:
                 if not chunks or chunks[-1][0] != info.range:
                     chunks.append((info.range, []))
                 chunks[-1][1].append(info)

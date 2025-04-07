@@ -14,7 +14,7 @@ from janim.components.vpoints import Cmpt_VPoints
 from janim.constants import PI
 from janim.items.item import Item, mockable
 from janim.items.points import Points
-from janim.render.impl import VItemRenderer
+from janim.render.renderer_vitem import VItemRenderer
 from janim.typing import Alpha, AlphaArray, ColorArray, JAnimColor, Vect
 from janim.utils.data import AlignedData
 from janim.utils.simple_functions import clip
@@ -40,6 +40,9 @@ class VItem(Points):
     def __init__(self, *points: Vect, fill_alpha=0, **kwargs):
         self.stroke_background = False
         super().__init__(*points, fill_alpha=fill_alpha, **kwargs)
+
+    def init_connect(self) -> None:
+        super().init_connect()
 
         def reverse():
             for cmpt in (self.radius, self.stroke, self.fill):

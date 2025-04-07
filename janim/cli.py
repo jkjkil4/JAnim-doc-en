@@ -5,13 +5,13 @@ import time
 from argparse import Namespace
 from functools import lru_cache
 
-from janim.anims.timeline import Timeline
+from janim.anims.timeline import BuiltTimeline, Timeline
 from janim.exception import (EXITCODE_MODULE_NOT_FOUND, EXITCODE_NOT_FILE,
                              ExitException)
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
-from janim.utils.file_ops import open_file
 from janim.utils.config import cli_config, default_config
+from janim.utils.file_ops import open_file
 
 _ = get_local_strings('cli')
 
@@ -26,36 +26,38 @@ def run(args: Namespace) -> None:
     if not timelines:
         return
 
-    from janim.gui.anim_viewer import AnimViewer
-
     auto_play = len(timelines) == 1
     available_timeline_names = [timeline.__name__ for timeline in get_all_timelines_from_module(module)]
 
+    # isort: off
+    from janim.gui.anim_viewer import AnimViewer    # 把这个放在第一个导入，确保进行其中对 pyside6 的检测
     from PySide6.QtCore import QPoint, QTimer
-
     from janim.gui.application import Application
 
     app = Application()
 
     log.info('======')
 
-    widgets: list[AnimViewer] = []
+    built_timelines: list[BuiltTimeline] = []
+
     for timeline in timelines:
-        viewer = AnimViewer(timeline().build(hide_subtitles=args.hide_subtitles),
-                            auto_play=auto_play,
-                            interact=args.interact,
-                            available_timeline_names=available_timeline_names)
-        widgets.append(viewer)
+        built_timelines.append(timeline().build(hide_subtitles=args.hide_subtitles, show_debug_notice=True))
 
     log.info('======')
     log.info(_('Constructing window'))
 
     t = time.time()
 
-    for i, widget in enumerate(widgets):
-        widget.show()
+    widgets: list[AnimViewer] = []
+    for i, built in enumerate(built_timelines):
+        viewer = AnimViewer(built,
+                            auto_play=auto_play,
+                            interact=args.interact,
+                            available_timeline_names=available_timeline_names)
+        widgets.append(viewer)
+        viewer.show()
         if i != 0:
-            widget.move(widgets[i - 1].pos() + QPoint(24, 24))
+            viewer.move(widgets[i - 1].pos() + QPoint(24, 24))
 
     QTimer.singleShot(200, widgets[-1].activateWindow)
 
@@ -154,6 +156,8 @@ def write(args: Namespace) -> None:
             video_writer.write_all(
                 os.path.join(output_dir,
                              f'{name}.{args.format}'),
+                use_pbo=not args.disable_pbo,
+                hwaccel=args.hwaccel,
                 _keep_temp=video_with_audio
             )
             if open_result and not video_with_audio:

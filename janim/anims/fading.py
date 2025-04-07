@@ -4,6 +4,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 
 from janim.anims.updater import DataUpdater, UpdaterParams
+from janim.components.glow import Cmpt_Glow
 from janim.components.rgbas import Cmpt_Rgbas
 from janim.constants import (C_LABEL_ANIM_ABSTRACT, C_LABEL_ANIM_IN,
                              C_LABEL_ANIM_OUT, ORIGIN, OUT)
@@ -13,7 +14,7 @@ from janim.typing import Vect
 from janim.utils.paths import PathFunc, get_path_func
 
 
-class Fade(DataUpdater, metaclass=ABCMeta):
+class Fade(DataUpdater[Item], metaclass=ABCMeta):
     '''
     :class:`FadeIn` 和 :class:`FadeOut` 的基类
     '''
@@ -72,11 +73,12 @@ class FadeIn(Fade):
             return
 
         for cmpt in data.components.values():
-            if not isinstance(cmpt, Cmpt_Rgbas):
-                continue
-            rgbas = cmpt.get().copy()
-            rgbas[:, 3] *= p.alpha
-            cmpt.set_rgbas(rgbas)
+            if isinstance(cmpt, Cmpt_Rgbas):
+                rgbas = cmpt.get().copy()
+                rgbas[:, 3] *= p.alpha
+                cmpt.set_rgbas(rgbas)
+            elif isinstance(cmpt, Cmpt_Glow):
+                cmpt.mix_alpha(0, 1 - p.alpha)
 
         if self.scale != 1.0:
             data.points.scale(
@@ -101,27 +103,33 @@ class FadeOut(Fade):
         item: Item,
         shift: Vect = ORIGIN,
         scale: float = 1.0,
-        show_at_end: float = False,
+        hide_at_end: float = True,
         **kwargs
     ):
         super().__init__(
             item,
             shift,
             scale,
-            show_at_end=show_at_end,
+            hide_at_end=hide_at_end,
             **kwargs
         )
+
+    def _time_fixed(self) -> None:
+        super()._time_fixed()
+        if self.hide_at_end:
+            self.timeline.schedule(self.t_range.end, self.item.hide, self.root_only)
 
     def updater(self, data: Item, p: UpdaterParams) -> None:
         if not isinstance(data, Points):
             return
 
         for cmpt in data.components.values():
-            if not isinstance(cmpt, Cmpt_Rgbas):
-                continue
-            rgbas = cmpt.get().copy()
-            rgbas[:, 3] *= 1 - p.alpha
-            cmpt.set_rgbas(rgbas)
+            if isinstance(cmpt, Cmpt_Rgbas):
+                rgbas = cmpt.get().copy()
+                rgbas[:, 3] *= 1 - p.alpha
+                cmpt.set_rgbas(rgbas)
+            elif isinstance(cmpt, Cmpt_Glow):
+                cmpt.mix_alpha(0, p.alpha)
 
         if self.scale != 1.0:
             data.points.scale(

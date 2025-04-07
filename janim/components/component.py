@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Generator, Self, overload
 
 import janim.utils.refresh as refresh
+from janim.anims.method_updater_meta import METHOD_UPDATER_KEY
 from janim.exception import CmptGroupLookupError
 from janim.locale.i18n import get_local_strings
 from janim.utils.data import AlignedData
+from janim.utils.signal import SIGNAL_OBJ_SLOTS_NAME
 
 if TYPE_CHECKING:   # pragma: no cover
     from janim.items.item import Item
@@ -85,9 +87,6 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
         '''
         self.bind = bind
 
-    def fallback_check(self) -> bool:
-        return self.bind is not None and self.bind.at_item.stored
-
     def mark_refresh(self, func: Callable | str, *, recurse_up=False, recurse_down=False) -> Self:
         '''
         详见： :meth:`~.Item.broadcast_refresh_of_component`
@@ -102,6 +101,7 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
         cmpt_copy = copy.copy(self)
         # cmpt_copy.bind = None
         cmpt_copy.reset_refresh()
+        setattr(cmpt_copy, SIGNAL_OBJ_SLOTS_NAME, None)
         return cmpt_copy
 
     def become(self, other) -> Self: ...
@@ -123,29 +123,17 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
 
     def walk_same_cmpt_of_self_and_descendants_without_mock(
         self,
-        root_only: bool = False,
-        *,
-        timed: bool = False
+        root_only: bool = False
     ) -> Generator[Self, None, None]:
         yield self
         if root_only or self.bind is None:
             return
-        yield from self.walk_same_cmpt_of_descendants_without_mock(timed=timed)
+        yield from self.walk_same_cmpt_of_descendants_without_mock()
 
-    def walk_same_cmpt_of_descendants_without_mock(
-        self,
-        *,
-        timed: bool = False
-    ) -> Generator[Self, None, None]:
+    def walk_same_cmpt_of_descendants_without_mock(self) -> Generator[Self, None, None]:
         item = self.bind.at_item
-        walk = None
         if not item.stored:
-            walk = item.walk_descendants(self.bind.decl_cls)
-        elif timed:
-            walk = item._walk_lst(self.bind.decl_cls, item._current_family(up=False))
-
-        if walk is not None:
-            for item in walk:
+            for item in item.walk_descendants(self.bind.decl_cls):
                 cmpt = self.get_same_cmpt_without_mock(item)
                 if cmpt is None:
                     continue
@@ -288,6 +276,10 @@ class _CmptGroup(Component):
             ]
 
             return self if all(a is b for a, b in zip(ret, objects)) else ret
+
+        meta = getattr(methods[0], METHOD_UPDATER_KEY, None)
+        if meta is not None:
+            setattr(wrapper, METHOD_UPDATER_KEY, meta)
 
         return wrapper
 

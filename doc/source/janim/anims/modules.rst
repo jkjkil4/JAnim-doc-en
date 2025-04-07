@@ -7,12 +7,14 @@ anims
    :maxdepth: 1
 
    animation
+   anim_stack
    composition
    creation
    display
    fading
    growing
    indication
+   method_updater_meta
    movement
    rotation
    timeline

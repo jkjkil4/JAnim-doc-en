@@ -5,6 +5,7 @@ from typing import Iterable, Self
 import numpy as np
 from colour import Color
 
+from janim.anims.method_updater_meta import register_updater
 from janim.components.component import Component
 from janim.typing import Alpha, AlphaArray, ColorArray, JAnimColor, RgbaArray
 from janim.utils.bezier import interpolate
@@ -95,6 +96,21 @@ class Cmpt_Rgbas[ItemT](Component[ItemT]):
         return colors
 
     @staticmethod
+    def format_color(color: JAnimColor) -> np.ndarray:
+        '''
+        将 字符串、``[r, g, b]`` 等统一为 ``[r, g, b]`` 数值数组的格式
+        '''
+        rgb = np.array(
+            color
+            if isinstance(color, Iterable) and not isinstance(color, str)
+            else Color(color).rgb
+        )
+
+        assert rgb.ndim == 1
+        assert rgb.shape[0] == 3
+        return rgb
+
+    @staticmethod
     def format_alphas(alphas: AlphaArray) -> np.ndarray:
         '''
         将传入值转为数值数组
@@ -112,6 +128,13 @@ class Cmpt_Rgbas[ItemT](Component[ItemT]):
         self._rgbas.data = rgbas
         return self
 
+    def _set_updater(self, p, color=None, alpha=None, *, root_only=False) -> None:
+        if color is not None:
+            self.mix(color, p.alpha, root_only=root_only)
+        if alpha is not None:
+            self.mix_alpha(alpha, p.alpha, root_only=root_only)
+
+    @register_updater(_set_updater)
     def set(
         self,
         color: JAnimColor | ColorArray | None = None,
@@ -201,10 +224,61 @@ class Cmpt_Rgbas[ItemT](Component[ItemT]):
         self.set_rgbas(rgbas)
         return self
 
-    def fade(self, factor: float | Iterable[float], *, root_only: bool = False) -> Self:
+    @register_updater(
+        lambda self, p, factor, *, root_only=False:
+            self.fade(factor * p.alpha, root_only=root_only)
+    )
+    def fade(self, factor: float, *, root_only: bool = False) -> Self:
+        '''
+        淡化颜色，``factor`` 是 0~1 的值，例如 0 没有效果，0.5 淡化一半，1 完全淡化（变得不可见）
+        '''
         for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(root_only):
             rgbas = cmpt.get().copy()
             rgbas[:, 3] *= 1 - factor
+            cmpt.set_rgbas(rgbas)
+
+        return self
+
+    @register_updater(
+        lambda self, p, color, factor=0.5, *, root_only=False:
+            self.mix(color, factor * p.alpha, root_only=root_only)
+    )
+    def mix(
+        self,
+        color: JAnimColor,
+        factor: float = 0.5,
+        *,
+        root_only: bool = False
+    ) -> Self:
+        '''
+        混合颜色，默认得到与 ``color`` 混合的中间色
+        '''
+        for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(root_only):
+            rgbas = cmpt.get().copy()
+            rgbas[:, :3] *= 1 - factor
+            rgbas[:, :3] += self.format_color(color) * factor
+            cmpt.set_rgbas(rgbas)
+
+        return self
+
+    @register_updater(
+        lambda self, p, alpha, factor=0.5, *, root_only=False:
+            self.mix_alpha(alpha, factor * p.alpha, root_only=root_only)
+    )
+    def mix_alpha(
+        self,
+        alpha: float,
+        factor: float = 0.5,
+        *,
+        root_only: bool = False
+    ) -> Self:
+        '''
+        混合透明度，默认得到与 ``alpha`` 混合的中间色
+        '''
+        for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(root_only):
+            rgbas = cmpt.get().copy()
+            rgbas[:, 3] *= 1 - factor
+            rgbas[:, 3] += alpha * factor
             cmpt.set_rgbas(rgbas)
 
         return self

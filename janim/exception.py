@@ -1,7 +1,6 @@
 import sys
 from dataclasses import dataclass
 
-
 _sys_excepthook = sys.excepthook
 
 
@@ -24,14 +23,14 @@ EXITCODE_PYOPENGL_NOT_FOUND = 1004
 '''``PyOpenGL`` 未安装时的退出码（仅在设备不支持 OpenGL4.3 的情况下需要安装 PyOpenGL）'''
 
 EXITCODE_TYPST_NOT_FOUND = 1101
-'''``Typst`` 未安装时的退出码'''
+'''Typst 未安装时的退出码'''
 EXITCODE_TYPST_COMPILE_ERROR = 1102
-'''``Typst`` 编译失败时的退出码'''
+'''Typst 编译失败时的退出码'''
 
 EXITCODE_FFMPEG_NOT_FOUND = 2001
-'''``ffmpeg`` 未安装时的退出码'''
+'''ffmpeg 未安装时的退出码'''
 EXITCODE_FFPROBE_ERROR = 2002
-'''``ffprobe`` 执行失败时的退出码'''
+'''ffprobe 执行失败时的退出码'''
 
 
 class JAnimException(Exception): ...
@@ -48,9 +47,8 @@ class ExitException(JAnimException):
 
 class TimelineError(JAnimException): ...
 class TimelineLookupError(TimelineError): ...
-class RecordFailedError(TimelineError): ...
-class RecordNotFoundError(TimelineError): ...
 class NotAnimationError(TimelineError): ...
+class AnimGroupError(TimelineError): ...
 
 
 class UpdaterError(JAnimException): ...
@@ -70,7 +68,6 @@ class BooleanOpsError(JAnimException): ...
 
 
 class AsTypeError(JAnimException): ...
-class CopyError(JAnimException): ...
 
 
 class ColorNotFoundError(JAnimException): ...

@@ -25,6 +25,7 @@ from janim.items.audio import *
 from janim.items.coordinate.coordinate_systems import *
 from janim.items.coordinate.functions import *
 from janim.items.coordinate.number_line import *
+from janim.items.frame_effect import *
 from janim.items.geometry.arc import *
 from janim.items.geometry.arrow import *
 from janim.items.geometry.line import *
@@ -36,7 +37,7 @@ from janim.items.shape_matchers import *
 from janim.items.svg.brace import *
 from janim.items.svg.svg_item import *
 from janim.items.svg.typst import *
-from janim.items.text.text import *
+from janim.items.text import *
 from janim.items.value_tracker import *
 from janim.items.vitem import *
 from janim.utils.bezier import *
