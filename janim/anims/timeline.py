@@ -658,7 +658,7 @@ class Timeline(metaclass=ABCMeta):
         if not root_only:
             assert not root.children and root.stored_children is not None
             root.stored = False
-            root.add(*[self.item_current(sub) for sub in root.stored_children])
+            root.add(*[self.item_current(sub, as_time=as_time) for sub in root.stored_children])
             root.reset_refresh()
         return root
 
@@ -677,7 +677,7 @@ class Timeline(metaclass=ABCMeta):
         if params is None:
             return len(self.item_appearances[item].visibility) % 2 == 1
 
-        # 在 updater 的回调函数中，params 不是弄，返回值表示在这时是否可见
+        # 在 updater 的回调函数中，params 不是 None，返回值表示在这时是否可见
         return self.item_appearances[item].is_visible_at(params.global_t)
 
     def is_displaying(self, item: Item) -> bool:
