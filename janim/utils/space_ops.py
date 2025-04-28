@@ -5,13 +5,12 @@ from typing import Callable, Iterable, Sequence
 
 import numpy as np
 import numpy.typing as npt
-from scipy.spatial.transform import Rotation
+from pyquaternion import Quaternion
 
-from janim.constants import *
+from janim.constants import DOWN, OUT, PI, RIGHT, TAU
 from janim.exception import PointError
 from janim.utils.iterables import adjacent_pairs
 from janim.utils.simple_functions import clip
-from janim.typing import Vect, VectArray
 
 
 def cross(v1: np.ndarray, v2: np.ndarray) -> list[np.ndarray]:
@@ -64,13 +63,22 @@ def quaternion_from_angle_axis(
     angle: float,
     axis: np.ndarray,
 ) -> list[float]:
-    return Rotation.from_rotvec(angle * normalize(axis)).as_quat()
+    q = Quaternion(axis=axis, angle=angle)
+    return [q.x, q.y, q.z, q.w]
 
 
 def angle_axis_from_quaternion(quat: Sequence[float]) -> tuple[float, np.ndarray]:
-    rot_vec = Rotation.from_quat(quat).as_rotvec()
-    norm = get_norm(rot_vec)
-    return norm, rot_vec / norm
+    # convert scalar-last order (quat) to scalar-first order (Quaternion)
+    b, c, d, a = quat
+    q = Quaternion(a, b, c, d)
+    # rotation vector = axis * angle
+    angle = 2 * np.arccos(q.w)
+    s = np.sqrt(1 - q.w * q.w)
+    if s < 1e-8:
+        axis = np.array([1.0, 0.0, 0.0])
+    else:
+        axis = np.array([q.x, q.y, q.z]) / s
+    return angle, axis
 
 
 def quaternion_conjugate(quaternion: Iterable) -> list:
@@ -85,8 +93,10 @@ def rotate_vector(
     angle: float,
     axis: np.ndarray = OUT
 ) -> np.ndarray | list[float]:
-    rot = Rotation.from_rotvec(angle * normalize(axis))
-    return vector @ rot.as_matrix().T
+    q = Quaternion(axis=axis, angle=angle)
+    vector = np.asarray(vector)
+    rotated = q.rotate(vector)
+    return rotated
 
 
 def rotate_vector_2d(vector: Iterable, angle: float):
@@ -96,18 +106,25 @@ def rotate_vector_2d(vector: Iterable, angle: float):
 
 
 def rotation_matrix_transpose_from_quaternion(quat: Iterable) -> np.ndarray:
-    return Rotation.from_quat(quat).as_matrix()
+    # convert scalar-last order (quat) to scalar-first order (Quaternion)
+    b, c, d, a = quat
+    q = Quaternion(a, b, c, d)
+    return q.rotation_matrix
 
 
 def rotation_matrix_from_quaternion(quat: Iterable) -> np.ndarray:
-    return np.transpose(rotation_matrix_transpose_from_quaternion(quat))
+    # convert scalar-last order (quat) to scalar-first order (Quaternion)
+    b, c, d, a = quat
+    q = Quaternion(a, b, c, d)
+    return q.rotation_matrix.T
 
 
 def rotation_matrix(angle: float, axis: np.ndarray) -> np.ndarray:
     """
     Rotation in R^3 about a specified axis of rotation.
     """
-    return Rotation.from_rotvec(angle * normalize(axis)).as_matrix()
+    q = Quaternion(axis=axis, angle=angle)
+    return q.rotation_matrix
 
 
 def rotation_matrix_transpose(angle: float, axis: np.ndarray) -> np.ndarray:
