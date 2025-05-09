@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from contextlib import contextmanager
 
 import moderngl as mgl
@@ -12,16 +13,22 @@ if TYPE_CHECKING:
 
 FRAME_BUFFER_BINDING = 15
 
-_qt_glwidget: GLWidget | None = None
+_qt_glwidget_ref: dict[mgl.Context, weakref.ReferenceType[GLWidget]] = {}
 
 
 def register_qt_glwidget(w: GLWidget) -> None:
-    global _qt_glwidget
-    _qt_glwidget = w
+    _qt_glwidget_ref[w.ctx] = weakref.ref(w)
+
+
+def get_qt_glwidget(ctx: mgl.Context) -> GLWidget | None:
+    ref = _qt_glwidget_ref.get(ctx, None)
+    return None if ref is None else ref()
 
 
 def create_framebuffer(ctx: mgl.Context, pw: int, ph: int) -> mgl.Framebuffer:
-    on_qt = _qt_glwidget is not None and _qt_glwidget.ctx is ctx
+    _qt_glwidget = get_qt_glwidget(ctx)
+
+    on_qt = _qt_glwidget is not None
     if on_qt:
         prev = _qt_glwidget.qfuncs.glGetIntegerv(0x8CA6)   # GL_FRAMEBUFFER_BINDING
 
@@ -52,7 +59,9 @@ def create_framebuffer(ctx: mgl.Context, pw: int, ph: int) -> mgl.Framebuffer:
 
 @contextmanager
 def framebuffer_context(fbo: mgl.Framebuffer):
-    on_qt = _qt_glwidget is not None and _qt_glwidget.ctx is fbo.ctx
+    _qt_glwidget = get_qt_glwidget(fbo.ctx)
+
+    on_qt = _qt_glwidget is not None
     if on_qt:
         prev = _qt_glwidget.qfuncs.glGetIntegerv(0x8CA6)   # GL_FRAMEBUFFER_BINDING
 

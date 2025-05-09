@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools as it
+import numbers
 import os
 import subprocess as sp
 import types
@@ -122,8 +123,8 @@ class TypstDoc(SVGItem):
         try:
             process = sp.Popen(commands, stdin=sp.PIPE)
         except FileNotFoundError:
-            log.error(_('Could not compile typst file. '
-                        'Please install typst and add it to the environment variables.'))
+            log.error(_('Could not compile Typst file. '
+                        'Please install Typst and add it to the environment variables.'))
             raise ExitException(EXITCODE_TYPST_NOT_FOUND)
 
         process.stdin.write(typst_content.encode('utf-8'))
@@ -181,7 +182,7 @@ class TypstDoc(SVGItem):
 
     @staticmethod
     def length_str(length: float, unit_or_scale: str | int) -> str:
-        if isinstance(unit_or_scale, (int, float)):
+        if isinstance(unit_or_scale, numbers.Real):
             return f'{length * unit_or_scale}pt'
         elif isinstance(unit_or_scale, str):
             return f'{length}{unit_or_scale}'
