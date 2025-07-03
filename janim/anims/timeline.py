@@ -169,6 +169,8 @@ class Timeline(metaclass=ABCMeta):
 
         self.debug_list: list[Item] = []
 
+        self.subtimeline_items: list[TimelineItem] = []
+
     @abstractmethod
     def construct(self) -> None:
         '''
@@ -439,9 +441,20 @@ class Timeline(metaclass=ABCMeta):
 
     def has_audio(self) -> bool:
         '''
-        是否有可以播放的音频
+        该 Timeline 自身是否有可以播放的音频
         '''
         return len(self.audio_infos) != 0
+
+    def has_audio_for_all(self) -> bool:
+        '''
+        考虑所有子 Timeline，是否有可以播放的音频
+        '''
+        if len(self.audio_infos) != 0:
+            return True
+        return any(
+            item._built.timeline.has_audio_for_all()
+            for item in self.subtimeline_items
+        )
 
     # endregion
 
@@ -726,10 +739,11 @@ class Timeline(metaclass=ABCMeta):
         '''
         隐藏显示中的所有物件
         '''
+        t = self.time_aligner.align_t(self.current_time)
         for appr in self.item_appearances.values():
             gaps = appr.visibility
             if len(gaps) % 2 == 1:
-                gaps.append(self.time_aligner.align_t(self.current_time))
+                gaps.append(t)
 
     def cleanup_display(self) -> None:
         from janim.utils.deprecation import deprecated
@@ -739,6 +753,13 @@ class Timeline(metaclass=ABCMeta):
             remove=(3, 3)
         )
         self.hide_all()
+
+    def visible_items(self) -> list[Item]:
+        return [
+            item
+            for item, appr in self.item_appearances.items()
+            if len(appr.visibility) % 2 == 1
+        ]
 
     def add_additional_render_calls_callback(
         self,
@@ -901,6 +922,7 @@ class BuiltTimeline:
         output_sample_count = math.floor(end * framerate) - math.floor(begin * framerate)
         result = np.zeros((output_sample_count, channels), dtype=np.int16)
 
+        # 合并自身的 audio
         for info in self.timeline.audio_infos:
             if end < info.range.at or begin > info.range.end:
                 continue
@@ -926,6 +948,14 @@ class BuiltTimeline:
                     np.zeros((right_blank, channels), dtype=np.int16)
                 ])
 
+            result += resize_preserving_order(data, output_sample_count)
+
+        # 合并子 Timeline 的 audio
+        for item in self.timeline.subtimeline_items:
+            built = item._built
+            frame_offset = int(item.at * fps)
+
+            data = built.get_audio_samples_of_frame(fps, framerate, frame - frame_offset, count=count)
             result += resize_preserving_order(data, output_sample_count)
 
         return result
@@ -1061,6 +1091,11 @@ class BuiltTimeline:
                     self.forward_to(tl2.end)
 
         这个例子中，在 ``Test`` 中插入了 ``Sub1`` 和 ``Sub2``
+
+        额外参数：
+
+        - ``delay``: 延迟多少秒开始该 Timeline 的播放
+        - ``keep_last_frame``: 是否在 Timeline 结束后仍然保留最后一帧的显示
         '''
         return TimelineItem(self, **kwargs)
 
@@ -1075,14 +1110,21 @@ class TimelineItem(Item):
             t = Animation.global_t_ctx.get() - item.at
             if 0 <= t <= item.duration:
                 item._built.render_all(self.data_ctx.get().ctx, t, blend_on=False)
+            elif item.keep_last_frame and t > item.duration:
+                item._built.render_all(self.data_ctx.get().ctx, item._built.duration, blend_on=False)
 
     renderer_cls = TIRenderer
 
-    def __init__(self, built: BuiltTimeline, *, delay: float = 0):
-        super().__init__()
+    def __init__(self, built: BuiltTimeline, *, delay: float = 0, keep_last_frame: bool = False, **kwargs):
+        super().__init__(**kwargs)
         self._built = built
         self.at = self.timeline.current_time + delay
         self.duration = self._built.duration
+        self.keep_last_frame = keep_last_frame
+
+        parent_timeline = Timeline.get_context(raise_exc=False)
+        if parent_timeline is not None:
+            parent_timeline.subtimeline_items.append(self)
 
     @property
     def end(self) -> float:
