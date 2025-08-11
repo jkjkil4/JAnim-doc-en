@@ -5,11 +5,30 @@ p.color-text {
     color: WHITE;
 }
 
-p.color-text-small {
-    font-size: small;
+p.color-text-s {
+    font-size: x-small;
     font-family: var(--font-stack--monospace);
     margin-top: 28px;
     color: WHITE;
+}
+
+p.color-hex {
+    font-size: small;
+    font-family: var(--font-stack--monospace);
+    margin-top: 15px;
+    color: WHITE;
+}
+
+p.color-hex-s {
+    font-size: small;
+    font-family: var(--font-stack--monospace);
+    margin-top: 18px;
+    color: WHITE;
+}
+
+div.color-group {
+    display: flex;
+    flex-wrap: wrap;
 }
 
 .colors {
@@ -247,6 +266,21 @@ p.color-text-small {
     color: #222222;
 }
 
+.PURE_RED {
+    background: #FF0000;
+    color: #FF0000;
+}
+
+.PURE_GREEN {
+    background: #00FF00;
+    color: #00FF00;
+}
+
+.PURE_BLUE {
+    background: #0000FF;
+    color: #0000FF;
+}
+
 .WHITE {
     background: #FFFFFF;
     color: #FFFFFF;
@@ -272,6 +306,11 @@ p.color-text-small {
     color: #CD853F;
 }
 
+.ORANGE {
+    background: #FF862F;
+    color: #FF862F;
+}
+
 .PINK {
     background: #D147BD;
     color: #D147BD;
@@ -280,14 +319,4 @@ p.color-text-small {
 .LIGHT_PINK {
     background: #DC75CD;
     color: #DC75CD;
-}
-
-.GREEN_SCREEN {
-    background: #00FF00;
-    color: #00FF00;
-}
-
-.ORANGE {
-    background: #FF862F;
-    color: #FF862F;
 }

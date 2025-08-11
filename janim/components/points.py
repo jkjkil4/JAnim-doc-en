@@ -86,8 +86,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         *,
         path_func: PathFunc = straight_path
     ) -> None:
-        if not cmpt1._points.is_share(cmpt2._points):
-            self.set(path_func(cmpt1.get(), cmpt2.get(), alpha))
+        if not cmpt1._points.is_share(cmpt2._points) or not cmpt1._points.is_share(self._points):
+            if cmpt1._points.is_share(cmpt2._points):
+                self._points = cmpt1._points.copy()
+            else:
+                self.set(path_func(cmpt1.get(), cmpt2.get(), alpha))
 
     # region 点数据 | Points
 
@@ -667,11 +670,11 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         depth: float | None = None,
         **kwargs
     ) -> Self:
-        if width:
+        if width is not None:
             self.set_width(width, stretch=True, **kwargs)
-        if height:
+        if height is not None:
             self.set_height(height, stretch=True, **kwargs)
-        if depth:
+        if depth is not None:
             self.set_depth(depth, stretch=True, **kwargs)
         return self
 
@@ -788,6 +791,8 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         '''
         通过旋转和缩放，使得物件的起点和终点被置于 ``start`` 和 ``end``
         '''
+        start, end = np.asarray(start), np.asarray(end)
+
         curr_start, curr_end = self.get_start(), self.get_end()
         curr_vect = curr_end - curr_start
         if np.all(curr_vect == 0):

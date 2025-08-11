@@ -7,6 +7,7 @@
 
 .. janim-example:: HelloJAnimExample
     :media: ../_static/videos/HelloJAnimExample.mp4
+    :ref: :class:`~.Circle` :class:`~.Square` :class:`~.Create` :class:`~.Transform` :class:`~.Uncreate`
 
     from janim.imports import *
 
@@ -24,43 +25,33 @@
             self.forward()
 
 
-.. janim-example:: SimpleCurveExample
-    :media: ../_static/videos/SimpleCurveExample.mp4
+.. janim-example:: BasicAnimationExample
+    :media: ../_static/videos/BasicAnimationExample.mp4
+    :ref: :class:`~.Create` :class:`~.SpinInFromNothing` :meth:`~.Item.anim`
 
     from janim.imports import *
 
-    class SimpleCurveExample(Timeline):
+    class BasicAnimationExample(Timeline):
         def construct(self):
-            item1 = VItem(
-                LEFT * 2, DR, UR * 3 + UP, RIGHT * 4, DR * 2, DOWN * 2, LEFT * 2,
-                NAN_POINT,
-                DL * 3, DL * 2, DOWN * 3, DL * 4, DL * 3,
-            )
-            item1.fill.set(alpha=0.5)
-            item1.show()
+            circle = Circle()
+            tri = Triangle()
 
-            self.forward(0.5)
-            self.play(item1.anim.color.set(BLUE))
-            self.play(Rotate(item1, -90 * DEGREES))
-            self.forward(0.5)
+            self.forward()
 
-            item2 = VItem(LEFT, UP, RIGHT, DOWN, LEFT)
-            item2.color.set(BLUE)
-            item2.fill.set(alpha=0.2)
+            self.play(Create(circle))
+            self.play(circle.anim.points.shift(LEFT * 3).scale(1.5))
+            self.play(circle.anim.set(color=RED, fill_alpha=0.5))
 
-            state = self.camera.copy()
-            self.play(self.camera.anim.points.scale(0.5))
-            self.play(self.camera.anim.become(state))
+            self.play(SpinInFromNothing(tri))
+            self.play(tri.anim.points.shift(RIGHT * 3).scale(1.5))
+            self.play(tri.anim.set(color=BLUE, fill_alpha=0.5))
 
-            self.play(
-                Transform(item1, item2),
-                duration=2
-            )
-            self.forward(1)
+            self.forward()
 
 
 .. janim-example:: TextExample
     :media: ../_static/videos/TextExample.mp4
+    :ref: :class:`~.Text` :class:`~.Write` :class:`~.FadeIn` :class:`~.Transform`
 
     from janim.imports import *
 
@@ -83,6 +74,7 @@
 
 .. janim-example:: TypstExample
     :media: ../_static/videos/TypstExample.mp4
+    :ref: :class:`~.TypstDoc` :class:`~.TypstText` :class:`~.TypstMath`
 
     from janim.imports import *
 
@@ -123,6 +115,7 @@
 
 .. janim-example:: AnimatingPiExample
     :media: ../_static/videos/AnimatingPiExample.mp4
+    :ref: :meth:`~.Cmpt_Points.arrange_in_grid` :meth:`~.Cmpt_Points.apply_complex_fn` :meth:`~.Cmpt_Points.apply_point_fn`
 
     from janim.imports import *
 
@@ -158,6 +151,7 @@
 
 .. janim-example:: NumberPlaneExample
     :media: ../_static/videos/NumberPlaneExample.mp4
+    :ref: :class:`~.NumberPlane` :meth:`~.Axes.get_graph` :meth:`~.Cmpt_Points.apply_matrix`
 
     from janim.imports import *
 
@@ -184,6 +178,7 @@
 
 .. janim-example:: UpdaterExample
     :media: ../_static/videos/UpdaterExample.mp4
+    :ref: :class:`~.DataUpdater` :class:`~.ItemUpdater`
 
     from janim.imports import *
 
@@ -223,8 +218,111 @@
             self.forward()
 
 
+.. janim-example:: ArrowPointingExample
+    :media: ../_static/videos/ArrowPointingExample.mp4
+    :ref: :class:`~.Dot` :class:`~.Arrow` :meth:`~.Item.update` :class:`~.GroupUpdater`
+
+    from janim.imports import *
+
+    class ArrowPointingExample(Timeline):
+        def construct(self):
+            dot1 = Dot(LEFT * 3)
+            dot2 = Dot()
+
+            arrow = Arrow(dot1, dot2, color=YELLOW)
+
+            self.show(dot1, dot2, arrow)
+            self.play(
+                dot2.update.points.rotate(TAU, about_point=RIGHT * 2),
+                GroupUpdater(
+                    arrow,
+                    lambda data, p:
+                        data.points.set_start_and_end(
+                            dot1.points.box.center,
+                            dot2.current().points.box.center
+                        ).r.place_tip()
+                ),
+                duration=4
+            )
+
+
+.. janim-example:: CombineUpdatersExample
+    :media: ../_static/videos/CombineUpdatersExample.mp4
+    :ref: :meth:`~.Item.anim` :meth:`~.Item.update` :class:`~.DataUpdater`
+
+    class CombineUpdatersExample(Timeline):
+        def construct(self):
+            square = Square()
+            square.points.to_border(LEFT)
+
+            # 这里每次 play 都多一个 Updater，用于演示 动画复合 的效果
+
+            self.play(
+                square.anim.points.to_border(RIGHT),
+                duration=2
+            )
+
+            ###############################
+
+            square.points.to_border(LEFT)
+            self.play(
+                square.anim.points.to_border(RIGHT),
+                DataUpdater(
+                    square,
+                    lambda data, p: data.points.shift(UP * math.sin(p.alpha * 4 * PI)),
+                    become_at_end=False
+                ),
+                duration=2
+            )
+
+            ###############################
+
+            square.points.to_border(LEFT)
+            self.play(
+                square.anim.points.to_border(RIGHT),
+                DataUpdater(
+                    square,
+                    lambda data, p: data.points.shift(UP * math.sin(p.alpha * 4 * PI)),
+                    become_at_end=False
+                ),
+                square.update(become_at_end=False).color.set(BLUE).r.points.rotate(-TAU),
+                duration=2
+            )
+
+.. janim-example:: RotatingPieExample
+    :media: ../_static/videos/RotatingPieExample.mp4
+    :ref: :class:`~.GroupUpdater` :class:`~.DataUpdater`
+
+    from janim.imports import *
+
+    class RotatingPieExample(Timeline):
+        def construct(self) -> None:
+            pie = Group(*[
+                Sector(start_angle=i * TAU / 4, angle=TAU / 4, radius=1.5, color=color, fill_alpha=1, stroke_alpha=0)
+                    .points.shift(rotate_vector(UR * 0.05, i * TAU / 4))
+                    .r
+                for i, color in enumerate([RED, PURPLE, MAROON, GOLD])
+            ])
+
+            self.play(
+                GroupUpdater(
+                    pie,
+                    lambda data, p: data.points.rotate(p.alpha * TAU, about_point=ORIGIN),
+                    duration=5
+                ),
+                DataUpdater(
+                    pie[0],
+                    lambda data, p: data.points.shift(normalize(data.mark.get()) * p.alpha),
+                    rate_func=there_and_back,
+                    become_at_end=False,
+                    at=2,
+                    duration=2
+                )
+            )
+
 .. janim-example:: MarkedItemExample
     :media: ../_static/videos/MarkedItemExample.mp4
+    :ref: :class:`~.MarkedItem` :class:`~.DataUpdater`
 
     from janim.imports import *
 
@@ -267,6 +365,7 @@
 
 .. janim-example:: FrameEffectExample
     :media: ../_static/videos/FrameEffectExample.mp4
+    :ref: :class:`~.SimpleFrameEffect` :class:`~.Rotate` :class:`~.DataUpdater`
 
     from janim.imports import *
 

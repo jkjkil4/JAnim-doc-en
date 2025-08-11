@@ -16,39 +16,27 @@ class HelloJAnimExample(Timeline):
         self.forward()
 
 
-class SimpleCurveExample(Timeline):
-    def construct(self) -> None:
-        item1 = VItem(
-            LEFT * 2, DR, UR * 3 + UP, RIGHT * 4, DR * 2, DOWN * 2, LEFT * 2,
-            NAN_POINT,
-            DL * 3, DL * 2, DOWN * 3, DL * 4, DL * 3,
-        )
-        item1.fill.set(alpha=0.5)
-        item1.show()
+class BasicAnimationExample(Timeline):
+    def construct(self):
+        circle = Circle()
+        star = Star()
 
-        self.forward(0.5)
-        self.play(item1.anim.color.set(BLUE))
-        self.play(Rotate(item1, -90 * DEGREES))
-        self.forward(0.5)
+        self.forward()
 
-        item2 = VItem(LEFT, UP, RIGHT, DOWN, LEFT)
-        item2.color.set(BLUE)
-        item2.fill.set(alpha=0.2)
+        self.play(Create(circle))
+        self.play(circle.anim.points.shift(LEFT * 3).scale(1.5))
+        self.play(circle.anim.set(color=RED, fill_alpha=0.5))
 
-        state = self.camera.copy()
-        self.play(self.camera.anim.points.scale(0.5))
-        self.play(self.camera.anim.become(state))
+        self.play(SpinInFromNothing(star))
+        self.play(star.anim.points.shift(RIGHT * 3).scale(1.5))
+        self.play(star.anim.set(color=YELLOW, fill_alpha=0.5))
 
-        self.play(
-            Transform(item1, item2),
-            duration=2
-        )
-        self.forward(1)
+        self.forward()
 
 
 class TextExample(Timeline):
     def construct(self) -> None:
-        txt = Text('Here is a text', font_size=64)
+        txt = Text('Here is some text', font_size=64)
         desc = Group(
             Text('You can also apply <c BLUE>styles</c> to the text.', format=Text.Format.RichText),
             Text('You can also apply <c GREEN><fs 1.4>styles</fs></c> to the text.', format=Text.Format.RichText),
@@ -150,7 +138,6 @@ class NumberPlaneExample(Timeline):
         self.forward()
 
 
-
 class UpdaterExample(Timeline):
     def construct(self) -> None:
         square = Square(fill_color=BLUE_E, fill_alpha=1).show()
@@ -185,6 +172,94 @@ class UpdaterExample(Timeline):
             duration=5
         )
         self.forward()
+
+
+class ArrowPointingExample(Timeline):
+    def construct(self):
+        dot1 = Dot(LEFT * 3)
+        dot2 = Dot()
+
+        arrow = Arrow(dot1, dot2, color=YELLOW)
+
+        self.show(dot1, dot2, arrow)
+        self.play(
+            dot2.update.points.rotate(TAU, about_point=RIGHT * 2),
+            GroupUpdater(
+                arrow,
+                lambda data, p:
+                    data.points.set_start_and_end(
+                        dot1.points.box.center,
+                        dot2.current().points.box.center
+                    ).r.place_tip()
+            ),
+            duration=4
+        )
+
+
+class CombineUpdatersExample(Timeline):
+    def construct(self):
+        square = Square()
+        square.points.to_border(LEFT)
+
+        # 这里每次 play 都多一个 Updater，用于演示 动画复合 的效果
+
+        self.play(
+            square.anim.points.to_border(RIGHT),
+            duration=2
+        )
+
+        ###############################
+
+        square.points.to_border(LEFT)
+        self.play(
+            square.anim.points.to_border(RIGHT),
+            DataUpdater(
+                square,
+                lambda data, p: data.points.shift(UP * math.sin(p.alpha * 4 * PI)),
+                become_at_end=False
+            ),
+            duration=2
+        )
+
+        ###############################
+
+        square.points.to_border(LEFT)
+        self.play(
+            square.anim.points.to_border(RIGHT),
+            DataUpdater(
+                square,
+                lambda data, p: data.points.shift(UP * math.sin(p.alpha * 4 * PI)),
+                become_at_end=False
+            ),
+            square.update(become_at_end=False).color.set(BLUE).r.points.rotate(-TAU),
+            duration=2
+        )
+
+
+class RotatingPieExample(Timeline):
+    def construct(self) -> None:
+        pie = Group(*[
+            Sector(start_angle=i * TAU / 4, angle=TAU / 4, radius=1.5, color=color, fill_alpha=1, stroke_alpha=0)
+                .points.shift(rotate_vector(UR * 0.05, i * TAU / 4))
+                .r
+            for i, color in enumerate([RED, PURPLE, MAROON, GOLD])
+        ])
+
+        self.play(
+            GroupUpdater(
+                pie,
+                lambda data, p: data.points.rotate(p.alpha * TAU, about_point=ORIGIN),
+                duration=5
+            ),
+            DataUpdater(
+                pie[0],
+                lambda data, p: data.points.shift(normalize(data.mark.get()) * p.alpha),
+                rate_func=there_and_back,
+                become_at_end=False,
+                at=2,
+                duration=2
+            )
+        )
 
 
 class MarkedSquare(MarkedItem, Square):

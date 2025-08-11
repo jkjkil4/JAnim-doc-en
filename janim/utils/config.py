@@ -55,58 +55,60 @@ class Config(metaclass=_ConfigMeta):
     - 在代码内设置 ``background_color`` 时，不能使用 ``background_color='#RRGGBB'``，应使用 ``background_color=Color('#RRGGBB')``
     - ``output_dir`` 以 ``:`` 开头时，表示相对于 ``.py`` 文件的路径，例如 ``output_dir=':/videos'``
 
-    基础用法
-    ------------
+    设置配置
+    ----------------
 
-    使用 ``Config.get.xxx`` 得到属性，例如 ``Config.get.fps`` 则得到当前设置的帧率
+    设置配置的三种方式：
 
-    使用 ``with Config(key=value):`` 在指定的配置下执行内容，例如：
+    1.  在 Python 代码中，将配置写在时间轴类里
 
-    .. code-block:: python
+        .. code-block:: python
 
-        print(Config.get.fps)   # 60
+            class YourTimeline(Timeline):
+                CONFIG = Config(
+                    fps=120,
+                    preview_fps=30
+                )
 
-        with Config(fps=120, pixel_width=1280):
-            print(Config.get.fps)           # 120
-            print(Config.get.pixel_width)   # 1280
-            print(Config.get.pixel_height)  # 1080
+                def construct(self) -> None:
+                    ...
 
-    其中没有设置的属性则采用默认设置 :py:obj:`~.default_config`
+    另见：:py:obj:`~.Timeline.CONFIG`
 
-    全局配置
-    ------------
+    2.  使用命令行参数修改全局配置
 
-    在使用命令行参数时，使用 ``-c 配置名 值`` 可以修改全局配置，设定的全局配置会覆盖其它配置
+        .. code-block:: sh
 
-    例如 ``janim write your_file.py YourTimeline -c fps 120`` 可以将渲染帧率设置为 120
+            janim write your_file.py YourTimeline -c fps 120 -c output_dir custom_dir
 
-    可以同时修改多个，例如：
+    3.  修改局部代码块的配置
 
-    .. code-block:: sh
+        .. code-block:: python
 
-        janim write your_file.py YourTimeline -c fps 120 -c output_dir custom_dir
+            class YourTimeline(Timeline):
+                def construct(self):
+                    txt1 = Text('Using default font')
 
-    这个命令会将动画以 120 的帧率输出到 ``custom_dir`` 这个指定的文件夹中
+                    with Config(font='Noto Serif CJK SC'):
+                        txt2 = Text('Using "Noto Serif CJK SC" font')
 
-    时间轴配置
-    ------------
+                    txt3 = Text('Using default font again')
 
-    定义类变量 ``CONFIG``，例如：
+                    group = Group(txt1, txt2, txt3).show()
+                    group.points.arrange(DOWN, aligned_edge=LEFT)
+
+    获取配置
+    -------------
+
+    使用 ``Config.get.xxx`` 得到属性，例如：
 
     .. code-block:: python
 
         class YourTimeline(Timeline):
-            CONFIG = Config(
-                fps=120,
-                preview_fps=30
-            )
+            def construct(self):
+                print(Config.get.fps)
 
-            def construct(self) -> None:
-                ...
-
-    这样则是设定这个时间轴的配置，渲染时帧率 120，预览（显示为窗口）时帧率 30
-
-    另见：:py:obj:`~.Timeline.CONFIG`
+    更多内容可以参考文档教程的 :doc:`配置系统 <../../tutorials/config_system>` 页面
     '''
     fps: int = _field(validator=_opt_int_validator)
     preview_fps: int = _field(validator=_opt_int_validator)

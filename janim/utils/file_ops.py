@@ -3,12 +3,23 @@ import inspect
 import os
 import platform
 import subprocess as sp
+from functools import lru_cache
 
 
 def guarantee_existence(path: str) -> str:
     if not os.path.exists(path):
         os.makedirs(path)
     return os.path.abspath(path)
+
+
+def getfile_or_empty(cls: type) -> str:
+    '''
+    获取类的文件路径，如果类没有文件路径，则返回空字符串
+    '''
+    try:
+        return inspect.getfile(cls)
+    except OSError:
+        return ''
 
 
 def get_janim_dir() -> str:
@@ -21,6 +32,11 @@ def get_janim_dir() -> str:
 def get_typst_temp_dir() -> str:
     from janim.utils.config import Config
     return guarantee_existence(os.path.join(Config.get.temp_dir, 'Typst'))
+
+
+@lru_cache(maxsize=1)
+def get_typst_packages_dir() -> str:
+    return os.path.join(get_janim_dir(), 'items', 'svg')
 
 
 def readall(filepath: str) -> str:
