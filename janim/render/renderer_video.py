@@ -141,7 +141,7 @@ class VideoReader:
 
     def open_video_pipe(self, frame: int) -> None:
         if self.process is not None:
-            self.process.terminate()
+            self.process.kill()
             self.process.wait()
             self.process = None
 
@@ -164,6 +164,6 @@ class VideoReader:
 
 class _Popen(sp.Popen):
     def __del__(self) -> None:
-        self.terminate()
+        self.kill()
         self.wait()
         super().__del__()
