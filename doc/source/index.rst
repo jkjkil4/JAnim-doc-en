@@ -6,7 +6,33 @@
 JAnim 文档
 =================================
 
-JAnim 是一个用于创建流畅动画的库
+JAnim 是一个用于创建流畅动画的库，以程序化动画为核心理念，并支持实时编辑、实时预览，并支持更多其它丰富的功能。
+
+以下是一部分样例展示（注：可以直接点击分页标题快速折叠这部分内容）
+
+.. tabs::
+
+   .. translatable-tab:: 基础样例
+
+      .. random-choice::
+
+         .. include:: examples/_basic_examples_options.rst
+
+   .. translatable-tab:: 类 Slide 演示
+
+      .. random-choice::
+         :start-text: 🎲 点击“随机切换”显示一个样例
+         :destroy:
+
+         .. include:: examples/_slide_examples_options.rst
+
+   .. translatable-tab:: 自动化解析与生成
+
+      .. random-choice::
+         :start-text: 🎲 点击“随机切换”显示一个样例
+         :destroy:
+
+         .. include:: examples/_auto_examples_options.rst
 
 .. toctree::
    :maxdepth: 1
@@ -39,6 +65,7 @@ JAnim 是一个用于创建流畅动画的库
    tutorials/sub_timeline
    tutorials/depth_detail
    tutorials/custom_data
+   tutorials/camera_usage
    tutorials/3d_coordinates
    tutorials/essence_of_points
 
@@ -47,9 +74,16 @@ JAnim 是一个用于创建流畅动画的库
    :caption: 其它
 
    other/use_gui
-   other/examples
    other/guide_for_manim_users
    other/faq
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 样例索引
+
+   examples/basic_examples
+   examples/slide_examples
+   examples/auto_examples
 
 .. toctree::
    :maxdepth: 2
