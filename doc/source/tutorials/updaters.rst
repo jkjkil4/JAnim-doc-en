@@ -59,7 +59,7 @@ Updater 的使用
 
 .. hint::
 
-    你可以使用 ``p.global_t - p.range.at`` 得知，到当前时刻动画持续了多久。
+    你可以使用 ``p.elapsed`` 得知，到当前时刻动画持续了多久，这是对 ``p.global_t - p.range.at`` 的简写。
 
 需要注意的是，如果传递给 :class:`~.DataUpdater` 的物件有子物件，
 在默认情况下 ``root_only=True`` 只对根物件自身进行操作，
@@ -325,6 +325,38 @@ JAnim 的各个 ``Updater`` 并非孤立，不仅可以使用 ``.current()`` 获
     - 在动画结束后，把传入的物件显示，并调用 :meth:`~.Item.become` 方法将传入物件改变成动画最后一刻的样子
 
     所以 :class:`~.ItemUpdater` 可以不传入物件，传入 ``None`` 也是可以的。
+
+``duration=FOREVER`` 的使用
+------------------------------------------
+
+我们可以使用 ``duration=FOREVER`` 来创建一个持续进行的 ``Updater``，例如：
+
+.. janim-example:: ForeverUpdater
+    :media: _static/tutorial/ForeverUpdater.mp4
+    :hide_name:
+
+    square = Square().show()
+
+    self.forward()
+
+    self.prepare(
+        DataUpdater(
+            square,
+            lambda data, p: data.points.rotate(p.elapsed * 60 * DEGREES),
+            duration=FOREVER
+        )
+    )
+
+    self.prepare(
+        DataUpdater(
+            square,
+            lambda data, p: data.points.set_x(2 * math.sin(p.alpha * TAU)),
+            become_at_end=False
+        ),
+        at=2,
+    )
+
+    self.forward(5)
 
 ``StepUpdater`` 的使用
 ------------------------------------
