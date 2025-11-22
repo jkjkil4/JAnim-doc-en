@@ -49,6 +49,7 @@ from janim.utils.config import Config, ConfigGetter, config_ctx_var
 from janim.utils.data import ContextSetter
 from janim.utils.iterables import resize_preserving_order
 from janim.utils.simple_functions import clip
+from janim.utils.space_ops import normalize
 
 _ = get_local_strings('timeline')
 
@@ -280,7 +281,7 @@ class Timeline(metaclass=ABCMeta):
 
     def timeout(self, delay: float, func: Callable, *args, **kwargs) -> None:
         '''
-        相当于 `schedule(self.current_time + delay, func, *args, **kwargs)`
+        相当于 ``schedule(self.current_time + delay, func, *args, **kwargs)``
         '''
         self.schedule(self.current_time + delay, func, *args, **kwargs)
 
@@ -649,7 +650,7 @@ class Timeline(metaclass=ABCMeta):
         '''
         检查指定的列表中物件的变化，并将变化记录为 :class:`~.Display`
 
-        （仅检查自身而不包括子物件的）
+        （仅检查自身而不包括后代物件的）
         '''
         for item in items:
             self.item_appearances[item].stack.detect_change(item, self.current_time)
@@ -700,15 +701,6 @@ class Timeline(metaclass=ABCMeta):
         # 在 updater 的回调函数中，params 不是 None，返回值表示在这时是否可见
         return self.item_appearances[item].is_visible_at(params.global_t)
 
-    def is_displaying(self, item: Item) -> bool:
-        from janim.utils.deprecation import deprecated
-        deprecated(
-            'Timeline.is_displaying',
-            'Timeline.is_visible',
-            remove=(3, 3)
-        )
-        return self.is_visible(item)
-
     def _show(self, item: Item) -> None:
         gaps = self.item_appearances[item].visibility
         if len(gaps) % 2 != 1:
@@ -744,15 +736,6 @@ class Timeline(metaclass=ABCMeta):
             gaps = appr.visibility
             if len(gaps) % 2 == 1:
                 gaps.append(t)
-
-    def cleanup_display(self) -> None:
-        from janim.utils.deprecation import deprecated
-        deprecated(
-            'Timeline.cleanup_display',
-            'Timeline.hide_all',
-            remove=(3, 3)
-        )
-        self.hide_all()
 
     def visible_items(self) -> list[Item]:
         return [
@@ -987,6 +970,10 @@ class BuiltTimeline:
                      uniforms(ctx,
                               JA_FRAMEBUFFER=FRAME_BUFFER_BINDING,
                               JA_CAMERA_SCALED_FACTOR=camera_info.scaled_factor,
+                              JA_CAMERA_CENTER=camera_info.center,
+                              JA_CAMERA_LOC=camera_info.camera_location,
+                              JA_CAMERA_RIGHT=normalize(camera_info.horizontal_vect),
+                              JA_CAMERA_UP=normalize(camera_info.vertical_vect),
                               JA_VIEW_MATRIX=camera_info.view_matrix.T.flatten(),
                               JA_FIXED_DIST_FROM_PLANE=camera_info.fixed_distance_from_plane,
                               JA_PROJ_MATRIX=camera_info.proj_matrix.T.flatten(),
@@ -1137,7 +1124,9 @@ class BuiltTimeline:
                     sub.seek(0).start(speed=4)
                     self.forward(2)
 
-        注意：在默认情况下未开始播放，需要使用 ``start`` 以开始播放
+        .. warning::
+
+            在默认情况下未开始播放，需要使用 ``start`` 以开始播放
 
         额外参数：
 

@@ -160,6 +160,11 @@ class BasepointVItem(MarkedItem, VItem):
         other: BasepointVItem,
         proj: ProjType | Literal['horizontal', 'vertical', 'h', 'v'] | Vect | None = None
     ) -> np.ndarray:
+        '''
+        计算从 ``self`` 到 ``other`` 的偏移量，如果指定了 ``proj`` 则只计算在该方向上的投影量
+
+        例如当我们想要让一段文字和另一段文字的基线对齐，可以使用 ``.offset_to(other, 'v')`` 计算基线垂直方向的偏移量，从而根据该量移动来对齐基线。
+        '''
         # 假定 [0] 是 basepoint，[1] 是 right，[2] 是 up
         offset = other.mark.get(0) - self.mark.get(0)
         if proj is None:
@@ -254,6 +259,13 @@ class TextChar(BasepointVItem):
         '''
         for name, params_stack in act_params_map.items():
             params = params_stack[-1]
+            if name not in available_act_map:
+                log.warning(
+                    _('"{name}" is not a valid rich text tag. ("<{name} {params}>")')
+                    .format(name=name, params=' '.join(params))
+                )
+                continue
+
             for converters, caller in available_act_map[name]:
                 if len(converters) == len(params):
                     try:
@@ -284,7 +296,7 @@ class TextChar(BasepointVItem):
 
 class TextLine(BasepointVItem, Group[TextChar]):
     '''
-    单行文字物件，作为 :class:`Text` 的子物件，在创建 :class:`Text` 时产生s
+    单行文字物件，作为 :class:`Text` 的子物件，在创建 :class:`Text` 时产生
     '''
 
     mark = CmptInfo(Cmpt_Mark_TextLineImpl[Self])
@@ -346,7 +358,17 @@ class Text(VItem, Group[TextLine]):
     '''
     文字物件，支持富文本等功能
 
-    如果对换行排版等有较高的需求可以考虑使用 :class:`~.TypstDoc`
+    如果对换行排版等有较高的需求可以考虑使用 :class:`~.TypstDoc` 以及 :class:`~.TypstText`
+
+    示例：
+
+    .. code-block:: python
+
+        Text('Hello World!')
+
+    .. code-block:: python
+
+        Text('Hello <c RED>World</c>!', format='rich')
     '''
     class Format(StrEnum):
         PlainText = 'plain'
@@ -367,6 +389,7 @@ class Text(VItem, Group[TextLine]):
 
         stroke_alpha: float = 0,
         fill_alpha: float = 1,
+        stroke_background: bool = True,
 
         center: bool = True,
         **kwargs
@@ -395,24 +418,23 @@ class Text(VItem, Group[TextLine]):
             self.text = ''
             self.act_params_list: list[tuple[ActAt, ActStart | ActEnd]] = []
             idx = 0
-            iter = re.finditer(r'(<+)(/?[^<]*?)>', text)
+            iter = re.finditer(r'<<|<(\/?[^>]*)>', text)
             for match in iter:
                 match: re.Match
                 start, end = match.span()
-                left, mid = match.group(1, 2)
-
                 self.text += text[idx:start]
                 idx = end
 
-                left_cnt = len(left)
-                self.text += '<' * (left_cnt // 2)
-                if left_cnt % 2 == 0:
-                    self.text += mid + '>'
+                groups = match.groups()
+
+                if groups[0] is None:   # <<
+                    self.text += '<'
                 else:
-                    if mid.startswith('/'):
-                        self.act_params_list.append((len(self.text), mid[1:]))
+                    act = groups[0]
+                    if act.startswith('/'):
+                        self.act_params_list.append((len(self.text), act[1:]))
                     else:
-                        split = mid.split()
+                        split = act.split()
                         self.act_params_list.append((len(self.text), (split[0], split[1:])))
 
             self.text += text[idx:]
@@ -424,6 +446,7 @@ class Text(VItem, Group[TextLine]):
             ],
             stroke_alpha=stroke_alpha,
             fill_alpha=fill_alpha,
+            stroke_background=stroke_background,
             **kwargs
         )
 
@@ -448,15 +471,37 @@ class Text(VItem, Group[TextLine]):
             idx -= len(line)
         return len(self) - 1, idx
 
-    def select_parts(self, pattern):
+    def select_parts(self, pattern, group: int = 0):
         '''
-        根据 ``pattern`` 获得文字中的部分
+        根据 ``pattern`` **正则表达式** 获得文字中的部分
+
+        - ``pattern``: 用于匹配的正则表达式
+
+        - ``group``: 对于正则表达式，指定使用第几个分组进行匹配，默认 ``0`` 表示整个匹配片段，其余数字表示对应的分组
+
+        提示：如果不希望使用正则表达式，可以使用 ``re.escape`` 进行转义，例如 ``re.escape('a[i]')`` 来正确匹配字符串中的 ``a[i]``
+
+        示例：
+
+        .. code-block:: python
+
+            txt = Text('Hello World!')
+            txt.select_parts('World').set(color=RED)
+
+        上面这个示例会选取出 ``Hello World!`` 中的 ``World`` 部分，并将其颜色设置为红色
+
+        .. code-block:: python
+
+            txt = Text('for i in range(100) if i % 3 == 0 or i % 5 == 0')
+            txt.select_parts(r'[^f](or)', 1).set(color=BLUE)
+
+        上面这个示例会选取出其中的 ``or`` 部分，并且避免选取 ``for`` 中的 ``or``
         '''
         total_text: str = ''.join([line.text for line in self])
         parts = []
         for mch in re.finditer(pattern, total_text):
-            l_row, l_col = self.idx_to_row_col(mch.start())
-            r_row, r_col = self.idx_to_row_col(mch.end())
+            l_row, l_col = self.idx_to_row_col(mch.start(group))
+            r_row, r_col = self.idx_to_row_col(mch.end(group))
             if l_row == r_row:
                 parts.append(self[l_row][l_col:r_col])
             else:
@@ -495,6 +540,7 @@ class Text(VItem, Group[TextLine]):
         text_at = 0
         act_idx = 0
         act_params_map: defaultdict[str, ActParamsStack] = defaultdict(list)
+        print(self.act_params_list)
         for line in self.children:
             for char in line.children:
                 while act_idx < len(self.act_params_list):
@@ -504,7 +550,13 @@ class Text(VItem, Group[TextLine]):
 
                     if isinstance(next_act, str):   # ActEnd
                         stack = act_params_map[next_act]
-                        stack.pop()
+                        try:
+                            stack.pop()
+                        except IndexError:
+                            log.warning(
+                                _('Unmatched end tag "</{name}>", ignored.')
+                                .format(name=next_act)
+                            )
                         if not stack:
                             del act_params_map[next_act]
                     else:   # ActStart

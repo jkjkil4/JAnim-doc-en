@@ -105,9 +105,11 @@ class DataUpdater[T: Item](Animation):
 
     并且，可以对同一个物件作用多个 updater，各个 updater 会依次调用
 
-    注意：默认 ``root_only=True`` 即只对根物件应用该 updater；需要设置 ``root_only=False`` 才会对所有后代物件也应用该 updater
+    .. hint::
 
-    另见：:class:`~.UpdaterExample`
+        默认 ``root_only=True`` 即只对根物件应用该 updater；需要设置 ``root_only=False`` 才会对所有后代物件也应用该 updater
+
+    另见 :ref:`basic_examples` 中的 ``UpdaterExample``
     '''
     label_color = C_LABEL_ANIM_ABSTRACT
 
@@ -213,7 +215,9 @@ class GroupUpdater[T: Item](Animation):
     '''
     以时间为参数对一组物件的数据进行修改
 
-    注意：该 Updater 假设 ``func`` 不会改变 ``item`` 后代物件结构，如果改变结构（例如增删子物件、:meth:`~.Item.become` 结构不一致等情况），则可能导致意外行为
+    .. warning::
+
+        该 Updater 假设 ``func`` 不会改变 ``item`` 后代物件结构，如果改变结构（例如增删子物件、:meth:`~.Item.become` 结构不一致等情况），则可能导致意外行为
     '''
     label_color = C_LABEL_ANIM_ABSTRACT
 
@@ -325,6 +329,7 @@ class MethodUpdater(Animation):
     def __init__(
         self,
         item: Item,
+        obj: Item | Item._AsTypeWrapper,
         show_at_begin: bool = True,
         hide_at_end: bool = False,
         become_at_end: bool = True,
@@ -332,6 +337,7 @@ class MethodUpdater(Animation):
     ):
         super().__init__(**kwargs)
         self.item = item
+        self.obj = obj
         self.show_at_begin = show_at_begin
         self.hide_at_end = hide_at_end
         self.become_at_end = become_at_end
@@ -340,17 +346,18 @@ class MethodUpdater(Animation):
         self.grouply: bool = False
 
     class _FakeCmpt:
-        def __init__(self, anim: MethodUpdater, cmpt_name: str, cmpt: Component):
+        def __init__(self, anim: MethodUpdater, cmpt_name: str, cmpt: Component, obj: Component | Item._AsTypeWrapper):
             self.anim = anim
             self.cmpt_name = cmpt_name
             self.cmpt = cmpt
+            self.obj = obj
 
         def __getattr__(self, name: str):
             if name == 'r':
                 return self.anim
 
-            attr = getattr(self.cmpt, name, None)
-            info: MethodUpdaterInfo = getattr(attr, METHOD_UPDATER_KEY, None)
+            attr = getattr(self.obj, name, None)
+            info: MethodUpdaterInfo | None = getattr(attr, METHOD_UPDATER_KEY, None)
             if info is None:
                 raise UpdaterError(
                     _('There is no updatable method named {name} in {cmpt}')
@@ -368,11 +375,12 @@ class MethodUpdater(Animation):
             return self.anim
 
     def __getattr__(self, name: str):
-        attr = getattr(self.item, name, None)
-        if isinstance(attr, Component):
-            return MethodUpdater._FakeCmpt(self, name, attr)
+        attr = getattr(self.obj, name, None)
+        cmpt = self.get_real_component(attr)
+        if cmpt is not None:
+            return MethodUpdater._FakeCmpt(self, name, cmpt, attr)
 
-        info: MethodUpdaterInfo = getattr(attr, METHOD_UPDATER_KEY, None)
+        info: MethodUpdaterInfo | None = getattr(attr, METHOD_UPDATER_KEY, None)
         if info is None:
             raise UpdaterError(
                 _('{item} has no component or updatable method named {name}')
@@ -385,6 +393,14 @@ class MethodUpdater(Animation):
             self.updaters.append((None, info.updater, args, kwargs, root_only))
             return self
         return wrapper
+
+    @staticmethod
+    def get_real_component(attr: Component | Item._AsTypeWrapper) -> Component | None:
+        if isinstance(attr, Component):
+            return attr
+        if isinstance(attr, Item._AsTypeWrapper) and isinstance(attr._astype_obj, Component):
+            return attr._astype_obj
+        return None
 
     def updater(self, data: Item, p: UpdaterParams) -> None:
         for cmpt_name, updater, args, kwargs, root_only in self.updaters:
@@ -422,16 +438,17 @@ class MethodUpdater(Animation):
 
 class MethodUpdaterArgsBuilder:
     '''
-    使得 ``.anim`` 和 ``.anim(...)`` 后可以进行同样的操作
+    使得 ``.update`` 和 ``.update(...)`` 后可以进行同样的操作
     '''
     def __init__(self, item: Item):
         self.item = item
+        self.obj = item._astype_wrapper or item
 
     def __call__(self, **kwargs):
-        return MethodUpdater(self.item, **kwargs)
+        return MethodUpdater(self.item, self.obj, **kwargs)
 
     def __getattr__(self, name):
-        return getattr(MethodUpdater(self.item), name)
+        return getattr(MethodUpdater(self.item, self.obj), name)
 
 
 class ItemUpdater(Animation):
@@ -446,7 +463,7 @@ class ItemUpdater(Animation):
     - 传入的 ``item`` 会在动画开始时隐藏，在动画结束后显示，传入 ``hide_at_begin=False`` 和 ``show_at_end=False`` 以禁用
     - 若传入 ``item=None``，则以上两点都无效
 
-    另见：:class:`~.UpdaterExample`
+    另见 :ref:`basic_examples` 中的 ``UpdaterExample``
     '''
     label_color = C_LABEL_ANIM_ABSTRACT
 

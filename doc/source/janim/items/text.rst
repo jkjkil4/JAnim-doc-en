@@ -32,7 +32,7 @@ text
 
 对于这种复杂的嵌套结构，如果你想要取子物件列表的切片，手动数数可能有点繁琐（比如上面例子的首行中，"first" 对应的切片是 ``[4:9]``）
 
-为了解决这个问题，你可以参考预览界面的 :ref:`子物件选择 <subitem_selector>` 功能
+为了解决这个问题，你可以参考预览界面的 :ref:`subitem_selector` 功能
 
 字符的标记属性
 ------------------
@@ -52,12 +52,14 @@ text
 
    :class:`~.TextLine` 也有类似的结构，但是只有 ``orig`` 、 ``right`` 和 ``up``，没有 ``advance``
 
+有关更多与基线原点有关的内容，请参考 :class:`~.BasepointVItem`。
+
 .. _rich_text:
 
 富文本
 -----------
 
-可以使用起始标记和结束标记（像 html 那样的）应用富文本格式：
+可以使用起始标记和结束标记（像 HTML 那样的）应用富文本格式：
 
 具体写法是： ``<格式名 参数>被应用对应格式的文本</格式名>``
 
@@ -67,13 +69,19 @@ text
 
    Text('Hello <c BLUE>JAnim</c>!', format=Text.Format.RichText)
 
+``format=Text.Format.RichText`` 也可以简写为 ``format='rich'``
+
+.. code-block:: python
+
+   Text('Hello <c BLUE>JAnim</c>!', format='rich')
+
 .. note::
 
    这里的 ``c`` 是 ``color`` 的简写
 
 .. important::
 
-   :class:`~.Text` 使用富文本需要传入 ``format=Text.Format.RichText``，否则默认情况下视作普通文本
+   :class:`~.Text` 使用富文本需要传入 ``format=Text.Format.RichText`` 或者 ``format='rich'``，否则默认情况下视作普通文本
 
 以下列出了可用的格式：
 
@@ -143,7 +151,7 @@ text
       - s
       - 描边半径
       - 一个数
-      - ``<s 0.01>JAnim<s>``
+      - ``<s 0.01>JAnim</s>``
       -
    *  - font_scale
       - fs
@@ -151,6 +159,14 @@ text
       - 一个数
       - ``Hello <fs 1.2>JAnim</fs>``
       -
+
+.. tip::
+
+   如果你想直接输入 ``<`` 符号，不希望其被解析为富文本标记，可以使用 ``<<`` 来表示一个 ``<`` 符号，例如：
+
+   .. code-block:: python
+
+      Text('if x << 10 <c RED>and</c> x > 2:', format='rich')
 
 参考文档
 ------------

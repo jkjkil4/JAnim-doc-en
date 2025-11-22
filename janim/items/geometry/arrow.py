@@ -13,6 +13,7 @@ from janim.items.points import Points
 from janim.items.svg.typst import TypstText
 from janim.items.text import Text
 from janim.items.vitem import DEFAULT_STROKE_RADIUS, VItem
+from janim.render.renderer_arrow import ArrowRenderer
 from janim.typing import Vect
 from janim.utils.simple_functions import clip
 from janim.utils.space_ops import (angle_of_vector, get_norm, midpoint,
@@ -86,7 +87,7 @@ class ArrowTip(VItem):
     def get_center_anchor(self) -> np.ndarray:
         '''
         根据设定的 ``center_anchor`` 得到原点位置，
-        请参考 :class:`ArrowTip.CenterAnchor`
+        请参考 :class:`CenterAnchor`
         '''
         points = self.points._points.data
         if self.center_anchor == CenterAnchor.Back:
@@ -139,6 +140,9 @@ class Arrow(Line):
     - ``buff``: 箭头首尾的空余量，默认为 ``0.25``
     - ``max_length_to_tip_length_ratio``: 箭头长度和直线长度最大比例
     '''
+
+    renderer_cls = ArrowRenderer
+
     points = CmptInfo(Cmpt_VPoints_ArrowImpl[Self])
 
     def __init__(
@@ -171,6 +175,27 @@ class Arrow(Line):
         else:
             copy_item.tip = copy_item[0]
         return copy_item
+
+    def _get_shrink_values(self) -> tuple[float, float]:
+        '''
+        返回用于着色器的 (shrink_left_length, shrink_right_length)
+        '''
+        return (-1.0, self._get_shrink_length(self.tip))
+
+    @staticmethod
+    def _get_shrink_length(tip: ArrowTip) -> float:
+        '''
+        返回用于着色器的 shrink_length
+        '''
+        tipcur = tip.current()  # TODO: optimize
+        bodylen = tipcur.body_length
+        match tipcur.center_anchor:
+            case CenterAnchor.Back:
+                return -bodylen * 0.05
+            case CenterAnchor.Center:
+                return bodylen / 2 - bodylen * 0.05
+            case CenterAnchor.Front:
+                return bodylen - bodylen * 0.05
 
     def _place_tip(
         self,
@@ -289,6 +314,9 @@ class DoubleArrow(Arrow):
         else:
             copy_item.start_tip = copy_item[1]
         return copy_item
+
+    def _get_shrink_values(self) -> tuple[float, float]:
+        return (self._get_shrink_length(self.start_tip), self._get_shrink_length(self.tip))
 
     def place_tip(self) -> Self:
         super().place_tip()

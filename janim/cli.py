@@ -21,6 +21,7 @@ def run(args: Namespace) -> None:
     module = get_module(args.filepath)
     if module is None:
         return
+    modify_typst_compile_flag(args)
     modify_cli_config(args)
 
     timelines = extract_timelines_from_module(args, module)
@@ -72,6 +73,7 @@ def write(args: Namespace) -> None:
     module = get_module(args.filepath)
     if module is None:
         return
+    modify_typst_compile_flag(args)
     modify_cli_config(args)
 
     timelines = extract_timelines_from_module(args, module)
@@ -234,6 +236,14 @@ def tool(args: Namespace) -> None:
     app.exec()
 
 
+def modify_typst_compile_flag(args: Namespace) -> None:
+    '''
+    用于 CLI 的 ``--external-typst`` 参数
+    '''
+    from janim.utils.typst_compile import set_use_external_typst
+    set_use_external_typst(args.external_typst)
+
+
 def modify_cli_config(args: Namespace) -> None:
     '''
     用于 CLI 的 ``-c`` 参数
@@ -336,6 +346,7 @@ def get_all_timelines_from_module(module) -> list[type[Timeline]]:
         if (isinstance(value, type)
             and issubclass(value, Timeline)
             and value.__module__ == module.__name__                             # 定义于当前模块，排除了 import 导入的
+            and not value.__name__.startswith('_')                              # 排除以下划线开头的
             and not getattr(value.construct, '__isabstractmethod__', False))    # construct 方法已被实现
     ]
     if len(classes) <= 1:

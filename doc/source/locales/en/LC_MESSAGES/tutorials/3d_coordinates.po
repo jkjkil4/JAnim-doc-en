@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: JAnim \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-08-11 22:08+0800\n"
+"POT-Creation-Date: 2025-11-20 08:21+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -20,10 +20,13 @@ msgstr ""
 "Generated-By: Babel 2.17.0\n"
 
 #: ../../source/tutorials/3d_coordinates.rst:4
-msgid "三维坐标"
-msgstr ""
+msgid "三维坐标 (TODO)"
+msgstr "3D Coordinates (TODO)"
 
 #: ../../source/tutorials/3d_coordinates.rst:8
 msgid "文档有待完善"
-msgstr ""
+msgstr "Documentation needs to be improved"
+
+#~ msgid "三维坐标"
+#~ msgstr ""
 

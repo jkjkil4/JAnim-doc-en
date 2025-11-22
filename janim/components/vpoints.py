@@ -11,7 +11,7 @@ import janim.utils.refresh as refresh
 from janim.components.points import Cmpt_Points, PointsFn
 from janim.constants import DEGREES, NAN_POINT, ORIGIN, OUT, RIGHT, UP
 from janim.exception import PointError
-from janim.items.item import Item
+from janim.items.item import Item, mockable
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
 from janim.typing import Vect, VectArray
@@ -27,8 +27,6 @@ from janim.utils.space_ops import (get_norm, get_unit_normal, normalize,
 
 _ = get_local_strings('vpoints')
 
-SCALE_STROKE_RADIUS_KEY = 'scale_stroke_radius'
-
 
 class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
     '''
@@ -43,8 +41,6 @@ class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
       例如对于点坐标列表 ``[a, b, c, d, e, NAN_POINT, f, g, h]``，则表示两段子路径：``[a, b, c, d, e]`` 和 ``[f, g, h]``
 
     - 如果子路径的终止点和起始点相同，则该段子路径被视为闭合路径。
-
-      只有闭合的子路径，才能够进行填充色的渲染
     '''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -81,17 +77,24 @@ class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
 
         return self
 
+    @mockable
     def scale(
-        self,
+        self: Cmpt_Points,
         scale_factor: float | Iterable,
         scale_stroke_radius: bool = False,
         *,
         root_only: bool = False,
         **kwargs
     ) -> Self:
+        assert isinstance(self, Cmpt_Points)
+
         if scale_stroke_radius and self.bind is not None and isinstance(scale_factor, numbers.Real):
-            Cmpt_Points.apply_points_fn.emit(self, scale_factor, root_only, key=SCALE_STROKE_RADIUS_KEY)
-        return super().scale(scale_factor, **kwargs)
+            # 如果是 mock 的情况，既然能调用 Cmpt_VPoints.scale
+            # 那么基本上可以确定 item 现在已经处在 VItem 的 astype 下
+            # 所以这里可以直接访问 .radius 来缩放半径
+            self.bind.at_item.radius.scale(scale_factor, root_only=root_only)
+
+        return Cmpt_Points.scale(self, scale_factor, root_only=root_only, **kwargs)
 
     # region align
 
@@ -266,6 +269,7 @@ class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
 
         return np.vstack(new_points)
 
+    @mockable
     def insert_n_curves(self, n: int, root_only=False) -> Self:
         for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(root_only):
             if not isinstance(cmpt, Cmpt_VPoints) or cmpt.curves_count() == 0:
@@ -612,6 +616,7 @@ class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
             self.add_subpath(new_subpath)
         return self
 
+    @mockable
     def make_smooth(self, approx=False, root_only=False) -> Self:
         '''
         Edits the path so as to pass smoothly through all
@@ -628,10 +633,12 @@ class Cmpt_VPoints[ItemT](Cmpt_Points[ItemT], impl=True):
 
         return self
 
+    @mockable
     def make_approximately_smooth(self, root_only=False) -> Self:
-        self.make_smooth(approx=True, root_only=root_only)
+        Cmpt_VPoints.make_smooth(self, approx=True, root_only=root_only)
         return self
 
+    @mockable
     def make_jagged(self, root_only=False) -> Self:
         for cmpt in self.walk_same_cmpt_of_self_and_descendants_without_mock(root_only):
             if not isinstance(cmpt, Cmpt_VPoints):
