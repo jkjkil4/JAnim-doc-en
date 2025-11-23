@@ -89,6 +89,13 @@ class FrameEffect(Item):
         return {}
 
     def add(self, *objs, insert=False) -> Self:
+        '''
+        .. warning::
+
+            调用 :meth:`add` 很可能不会按预期工作
+
+            如果你想应用额外的物件，需要使用 :meth:`apply`
+        '''
         if objs:
             log.warning(
                 _('Calling {cls}.add is unusual and may not work as expected. '
@@ -99,6 +106,13 @@ class FrameEffect(Item):
         return self
 
     def remove(self, *objs) -> Self:
+        '''
+        .. warning::
+
+            调用 :meth:`remove` 很可能不会按预期工作
+
+            如果你想应用额外的物件，需要使用 :meth:`discard`
+        '''
         if objs:
             log.warning(
                 _('Calling {cls}.remove is unusual and may not work as expected. '
@@ -108,6 +122,9 @@ class FrameEffect(Item):
         return super().remove(*objs)
 
     def apply(self, *items: Item, root_only: bool = False) -> Self:
+        '''
+        对更多物件应用效果
+        '''
         self.apprs.extend(
             self.timeline.item_appearances[sub]
             for item in items
@@ -115,6 +132,9 @@ class FrameEffect(Item):
         )
 
     def discard(self, *items: Item, root_only: bool = False) -> Self:
+        '''
+        对指定物件的取消应用效果
+        '''
         for item in items:
             for sub in item.walk_self_and_descendants(root_only):
                 try:
@@ -153,9 +173,9 @@ class SimpleFrameEffect(FrameEffect):
     '''
     :class:`FrameEffect` 的简化封装，具体请参考 :class:`FrameEffect` 中的说明
 
-    .. warning::
+    .. note::
 
-        若着色器代码中出现报错，报错行数无法与 ``shader`` 代码中的行对应
+        如果该着色器代码中出现报错，会显示为 ``JA_SIMPLE_FRAMEEFFECT_SHADER`` 中出现的
     '''
     def __init__(
         self,
@@ -551,27 +571,9 @@ class Shadertoy(FrameEffect):
             \'''
         ).show()
 
-    .. warning::
+    .. note::
 
-        实际的报错行数要减去 10
-
-        例如，如果在上面的例子中将 ``iResolution`` 误写为了 ``Resolution``，
-        会导致 ``0(12) : error C1503: undefined variable "Resolution"`` 的报错，
-        报错信息说的是在第 12 行，实际是第 2 行
-
-        行数标注：
-
-        .. code-block:: python
-
-            Shadertoy(
-                0 \'''
-                1 void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
-                2     vec2 uv = fragCoord.xy / iResolution.xy;
-                3     vec3 color = vec3(uv.x, uv.y, 0.5);
-                4     fragColor = vec4(color, 1.0);
-                5 }
-                6 \'''
-            ).show()
+        如果该着色器代码中出现报错，会显示为 ``JA_SHADERTOY`` 中出现的
     '''
     def __init__(
         self,
@@ -581,12 +583,15 @@ class Shadertoy(FrameEffect):
         root_only: bool = False,
         **kwargs
     ):
-        super().__init__(
-            fragment_shader=shadertoy_fragment_shader.replace('#[JA_SHADERTOY]', shader),
-            cache_key=cache_key,
-            root_only=root_only,
-            **kwargs
-        )
+        with ShaderInjection(
+            JA_SHADERTOY=shader.strip()
+        ):
+            super().__init__(
+                fragment_shader=shadertoy_fragment_shader,
+                cache_key=cache_key,
+                root_only=root_only,
+                **kwargs
+            )
 
         self.apply_uniforms(
             iResolution=np.array([

@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: JAnim\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-22 21:41+0800\n"
-"PO-Revision-Date: 2025-11-22 21:48+0800\n"
+"POT-Creation-Date: 2025-11-23 08:28+0800\n"
+"PO-Revision-Date: 2025-11-23 08:30+0800\n"
 "Last-Translator: \n"
 "Language-Team: en <LL@li.org>\n"
 "Language: en\n"
@@ -56,7 +56,22 @@ msgstr ""
 "        self.play(Uncreate(square))\n"
 "        self.forward()"
 
+#: ../../source/examples/basic_examples.rst:43
 #: ../../source/examples/basic_examples.rst:44
+#: ../../source/examples/basic_examples.rst:46
+#: ../../source/examples/basic_examples.rst:47
+#: ../../source/examples/basic_examples.rst:51
+#: ../../source/examples/basic_examples.rst:55
+#: ../../source/examples/basic_examples.rst:59
+#: ../../source/examples/basic_examples.rst:65
+#: ../../source/examples/basic_examples.rst:66
+#: ../../source/examples/basic_examples.rst:67
+#: ../../source/examples/basic_examples.rst:77
+#: ../../source/examples/basic_examples.rst:78
+msgid "参考："
+msgstr "See also:"
+
+#: ../../source/examples/basic_examples.rst:45
 msgid ":class:`~.Circle` :class:`~.Square` :class:`~.Create` :class:`~.Transform` :class:`~.Uncreate`"
 msgstr ":class:`~.Circle` :class:`~.Square` :class:`~.Create` :class:`~.Transform` :class:`~.Uncreate`"
 
@@ -100,7 +115,7 @@ msgstr ""
 "\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:48
+#: ../../source/examples/basic_examples.rst:49
 msgid ":class:`~.Create` :class:`~.SpinInFromNothing` :meth:`~.Item.anim`"
 msgstr ":class:`~.Create` :class:`~.SpinInFromNothing` :meth:`~.Item.anim`"
 
@@ -146,7 +161,7 @@ msgstr ""
 "        self.play(Transform(desc[0], desc[1]))\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:47
+#: ../../source/examples/basic_examples.rst:48
 msgid ":class:`~.Text` :class:`~.Write` :class:`~.FadeIn` :class:`~.Transform`"
 msgstr ":class:`~.Text` :class:`~.Write` :class:`~.FadeIn` :class:`~.Transform`"
 
@@ -256,7 +271,7 @@ msgstr ""
 "        self.forward()\n"
 "        self.play(FadeOut(group))"
 
-#: ../../source/examples/basic_examples.rst:78
+#: ../../source/examples/basic_examples.rst:79
 msgid ":class:`~.TypstDoc` :class:`~.TypstText` :class:`~.TypstMath` :ref:`typst_usage`"
 msgstr ":class:`~.TypstDoc` :class:`~.TypstText` :class:`~.TypstMath` :ref:`typst_usage`"
 
@@ -294,7 +309,7 @@ msgstr ""
 "        self.play(typ['space^2', ...].anim.set(color=RED))\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:45
+#: ../../source/examples/basic_examples.rst:46
 msgid ":class:`~.TypstMath` :ref:`typst_usage`"
 msgstr ":class:`~.TypstMath` :ref:`typst_usage`"
 
@@ -364,7 +379,7 @@ msgstr ""
 "        )\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:60
+#: ../../source/examples/basic_examples.rst:61
 msgid ":meth:`~.Cmpt_Points.arrange_in_grid` :meth:`~.Cmpt_Points.apply_complex_fn` :meth:`~.Cmpt_Points.apply_point_fn`"
 msgstr ":meth:`~.Cmpt_Points.arrange_in_grid` :meth:`~.Cmpt_Points.apply_complex_fn` :meth:`~.Cmpt_Points.apply_point_fn`"
 
@@ -416,7 +431,7 @@ msgstr ""
 "        )\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:52
+#: ../../source/examples/basic_examples.rst:53
 msgid ":class:`~.NumberPlane` :meth:`~.Axes.get_graph` :meth:`~.Cmpt_Points.apply_matrix`"
 msgstr ":class:`~.NumberPlane` :meth:`~.Axes.get_graph` :meth:`~.Cmpt_Points.apply_matrix`"
 
@@ -497,7 +512,7 @@ msgstr ""
 "        )\n"
 "        self.forward()"
 
-#: ../../source/examples/basic_examples.rst:66
+#: ../../source/examples/basic_examples.rst:67
 msgid ":class:`~.Brace` :class:`~.DataUpdater` :class:`~.ItemUpdater`"
 msgstr ":class:`~.Brace` :class:`~.DataUpdater` :class:`~.ItemUpdater`"
 
@@ -549,7 +564,7 @@ msgstr ""
 "            duration=4\n"
 "        )"
 
-#: ../../source/examples/basic_examples.rst:52
+#: ../../source/examples/basic_examples.rst:53
 msgid ":class:`~.Dot` :class:`~.Arrow` :meth:`~.Item.update` :class:`~.GroupUpdater`"
 msgstr ":class:`~.Dot` :class:`~.Arrow` :meth:`~.Item.update` :class:`~.GroupUpdater`"
 
@@ -602,8 +617,8 @@ msgstr ""
 "        square = Square()\n"
 "        square.points.to_border(LEFT)\n"
 "\n"
-"        # Here, a new Updater is accumulated for every `play` to show the "
-"effect of animation combination\n"
+"        # Here, a new Updater is accumulated for every `play`\n"
+"        # to show the effect of animation combination\n"
 "\n"
 "        self.play(\n"
 "            square.anim.points.to_border(RIGHT),\n"
@@ -640,7 +655,7 @@ msgstr ""
 "            duration=2\n"
 "        )"
 
-#: ../../source/examples/basic_examples.rst:68
+#: ../../source/examples/basic_examples.rst:69
 msgid ":meth:`~.Item.anim` :meth:`~.Item.update` :class:`~.DataUpdater`"
 msgstr ":meth:`~.Item.anim` :meth:`~.Item.update` :class:`~.DataUpdater`"
 
@@ -706,7 +721,7 @@ msgstr ""
 "            )\n"
 "        )"
 
-#: ../../source/examples/basic_examples.rst:56
+#: ../../source/examples/basic_examples.rst:57
 msgid ":class:`~.Sector` :func:`~.rotate_vector` :class:`~.GroupUpdater` :class:`~.DataUpdater`"
 msgstr ":class:`~.Sector` :func:`~.rotate_vector` :class:`~.GroupUpdater` :class:`~.DataUpdater`"
 
@@ -794,7 +809,7 @@ msgstr ""
 "            duration=4\n"
 "        )"
 
-#: ../../source/examples/basic_examples.rst:67
+#: ../../source/examples/basic_examples.rst:68
 msgid ":class:`~.MarkedItem` :class:`~.DataUpdater`"
 msgstr ":class:`~.MarkedItem` :class:`~.DataUpdater`"
 
@@ -904,6 +919,6 @@ msgstr ""
 "            )\n"
 "        )"
 
-#: ../../source/examples/basic_examples.rst:79
+#: ../../source/examples/basic_examples.rst:80
 msgid ":class:`~.SimpleFrameEffect` :class:`~.Rotate` :class:`~.DataUpdater`"
 msgstr ":class:`~.SimpleFrameEffect` :class:`~.Rotate` :class:`~.DataUpdater`"

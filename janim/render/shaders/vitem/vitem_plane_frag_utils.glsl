@@ -1,7 +1,6 @@
 // Required:
 //  in vec2 v_coord;
 //  vec2 get_point(int idx)
-//  bool get_isclosed(int idx)
 
 #include "../../includes/is_approx_line.glsl"
 #include "../../includes/bezier_sdf.glsl"
@@ -10,9 +9,9 @@ void get_curve_attr(
     vec2 A,
     vec2 B,
     vec2 C,
-    out bool match,
-    out float d,
-    out float sgn
+    inout bool match,
+    inout float d,
+    inout float sgn
 ) {
     if (A == B && B == C)
         return;
@@ -52,7 +51,6 @@ void get_subpath_attr(
     out float fill_sgn
 ) {
     end_idx = lim;
-    bool is_closed = get_isclosed(start_idx);
 
     stroke_d = INFINITY;
     fill_sgn = 1.0;
@@ -67,6 +65,7 @@ void get_subpath_attr(
         }
         vec2 A = get_point(i), C = get_point(i + 2);
 
+        match = false;
         get_curve_attr(A, B, C, match, stroke_d, fill_sgn);
         if (match) {
             idx = i;
