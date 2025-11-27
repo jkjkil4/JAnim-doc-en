@@ -11,7 +11,7 @@ import attrs
 import psutil
 from colour import Color
 
-from janim.constants import DOWN, LEFT, RIGHT, UP
+from janim.constants import DEFAULT_ITEM_TO_EDGE_BUFF, DOWN, LEFT, RIGHT, UP
 from janim.locale.i18n import get_local_strings
 from janim.typing import Vect
 from janim.utils.file_ops import guarantee_existence
@@ -123,6 +123,7 @@ class Config(metaclass=_ConfigMeta):
     background_color: Color = _field(validator=optional_type_validator(Color, 'Color'))
     font: str | Iterable[str] = None
     subtitle_font: str | Iterable[str] = None
+    subtitle_to_edge_buff: float = None
 
     audio_framerate: int = _field(validator=_opt_int_validator)
     audio_channels: int = _field(validator=_opt_int_validator)
@@ -170,6 +171,7 @@ default_config = Config(
     background_color=Color('#000000'),
     font='Consolas',
     subtitle_font='',
+    subtitle_to_edge_buff=DEFAULT_ITEM_TO_EDGE_BUFF,
 
     audio_framerate=44100,
     audio_channels=2,
@@ -279,7 +281,7 @@ class ConfigGetter:
 
     def scaled_pixel_size(self, scale: float) -> dict[str, int]:
         '''
-        根据缩放比例计算缩放后的像素尺寸
+        根据缩放比例计算缩放后的 **像素尺寸**
 
         使用示例：
 
@@ -296,7 +298,7 @@ class ConfigGetter:
 
     def scaled_frame_size(self, scale: float) -> dict[str, float]:
         '''
-        根据缩放比例计算缩放后的画面尺寸
+        根据缩放比例计算缩放后的 **画面尺寸**
 
         使用示例：
 
@@ -309,6 +311,76 @@ class ConfigGetter:
         return {
             'frame_width': self.frame_width * scale,
             'frame_height': self.frame_height * scale
+        }
+
+    def scaled_width(self, scale: float) -> dict[str, float]:
+        '''
+        根据缩放比例计算缩放后的 **画面宽度和像素宽度**
+
+        使用示例：
+
+        .. code-block:: python
+
+            Config(
+                **Config.get.scaled_width(0.5)
+            )
+        '''
+        return {
+            'pixel_width': int(self.pixel_width * scale),
+            'frame_width': self.frame_width * scale
+        }
+
+    def scaled_height(self, scale: float) -> dict[str, float]:
+        '''
+        根据缩放比例计算缩放后的 **画面高度和像素高度**
+
+        使用示例：
+
+        .. code-block:: python
+
+            Config(
+                **Config.get.scaled_height(0.5)
+            )
+        '''
+        return {
+            'pixel_height': int(self.pixel_height * scale),
+            'frame_height': self.frame_height * scale
+        }
+
+    def scaled_size(self, scale: float) -> dict[str, float]:
+        '''
+        根据缩放比例计算缩放后的 **画面尺寸和像素尺寸**
+
+        使用示例：
+
+        .. code-block:: python
+
+            Config(
+                **Config.get.scaled_size(0.5)
+            )
+        '''
+        return {
+            **self.scaled_width(scale),
+            **self.scaled_height(scale)
+        }
+
+    def swapped_size(self) -> dict[str, int]:
+        '''
+        获取交换宽高后的 **画面尺寸和像素尺寸**
+
+        使用示例（将横屏配置转为竖屏）：
+
+        .. code-block:: python
+
+            Config(
+                **Config.get.swapped_size()
+            )
+        '''
+        return {
+            'pixel_width': self.pixel_height,
+            'pixel_height': self.pixel_width,
+            'frame_width': self.frame_height,
+            'frame_height': self.frame_width
         }
 
 
