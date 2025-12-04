@@ -30,6 +30,12 @@ class _ItemMeta_ABCMeta(_ItemMeta, ABCMeta):
 
 
 class CoordinateSystem(metaclass=ABCMeta):
+    '''
+    坐标系统抽象类
+
+    具体实现请参考 :class:`Axes` :class:`ThreeDAxes` 以及 :class:`NumberPlane`
+    '''
+
     def __init__(
         self,
         *args,
@@ -143,6 +149,40 @@ class CoordinateSystem(metaclass=ABCMeta):
 
 
 class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
+    '''
+    二维坐标轴
+
+    -   ``num_sampled_graph_points_per_tick``:
+
+        表示 :meth:`get_graph` 方法在采样步长缺省时，在每段刻度中采样点的数量
+
+    -   ``axis_config``:
+
+        横坐标轴和纵坐标轴共用的配置项，可用参数请参考 :class:`~.NumberLine`
+
+    -   ``x_axis_config``:
+
+        横坐标轴的配置项，可用参数请参考 :class:`~.NumberLine`
+
+    -   ``y_axis_config``:
+
+        纵坐标轴的配置项，可用参数请参考 :class:`~.NumberLine`
+
+    -   ``x_length``:
+
+        当该值指定时，会将横坐标轴的长度拉伸以匹配该值
+
+    -   ``y_length``:
+
+        当该值指定时，会将纵坐标轴的长度拉伸以匹配该值
+
+    -   ``unit_size``:
+
+        指定横坐标与纵坐标的单位长度，如果指定了对应的 ``*_length`` 则会被忽略
+
+        注：如果需要给某个坐标轴单独指定 ``unit_size``，请传入对应的 ``*_axis_config``
+    '''
+
     axis_config_d = dict(
         numbers_to_exclude=[0]
     )
@@ -185,10 +225,8 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
             )
             x_length = width
 
-        self.x_range = x_range
-        self.y_range = y_range
-
         axis_config = dict(**axis_config, unit_size=unit_size)
+
         self.x_axis = CoordinateSystem.create_axis(
             x_range,
             axis_config=merge_dicts_recursively(
@@ -199,6 +237,8 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
             ),
             length=x_length
         )
+        self.x_range = self.x_axis.x_range
+
         self.y_axis = CoordinateSystem.create_axis(
             y_range,
             axis_config=merge_dicts_recursively(
@@ -210,6 +250,7 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
             length=y_length
         )
         self.y_axis.points.rotate(90 * DEGREES, about_point=ORIGIN)
+        self.y_range = self.y_axis.x_range
 
         super().__init__(
             self.x_axis,
@@ -226,15 +267,24 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
         self,
         function: Callable[[float], float],
         x_range: RangeSpecifier | None = None,
+        *,
         bind: bool = True,
         **kwargs
     ) -> ParametricCurve:
         '''
         基于坐标轴的坐标构造函数曲线，使用 :class:`~.ParametricCurve`
 
-        - ``function``: 用于构造曲线的函数
-        - ``x_range``: 图像定义域
-        - ``bind``: 在默认情况下为 ``True``，会使得函数曲线自动同步应用于坐标系上的变换，也可同步动画，详见 :ref:`basic_examples` 中的 ``NumberPlaneExample``
+        -   ``function``: 用于构造曲线的函数
+
+        -   ``x_range``: 图像定义域
+
+            如果没有指定则使用横坐标的定义域
+
+            指定时，可以使用 ``[x_min, x_max, x_step]`` 或者省略采样步长 ``[x_min, x_max]``
+
+            如果没有指定采样步长，则将坐标轴的刻度步长除以物件的 ``num_sampled_graph_points_per_tick`` 作为采样步长
+
+        -   ``bind``: 在默认情况下为 ``True``，会使得函数曲线自动同步应用于坐标系上的变换，也可同步动画，详见 :ref:`basic_examples` 中的 ``NumberPlaneExample``
 
         .. warning::
 
@@ -244,12 +294,14 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
 
             如果你有放在同一个 :class:`~.Group` 里的需求，请传入 ``bind=False`` 以避免该情况
         '''
-        x_range = x_range or self.x_range
-        t_range = np.ones(3)
-        t_range[:len(x_range)] = x_range
-        # 对于坐标轴，x_range 的第三个元素是刻度步长
-        # 所以对于函数，需要除以 num_sampled_graph_points_per_tick
-        t_range[2] /= self.num_sampled_graph_points_per_tick
+        t_range = self.x_range.copy()
+        if x_range is not None:
+            t_range[:len(x_range)] = x_range
+
+        if x_range is None or len(x_range) < 3:
+            # 当用户没有指定采样步长（没有指定 x_range 或者 x_range 不包含 step 的部分）时
+            # 将 t_range[2] 除以 num_sampled_graph_points_per_tick，从刻度步长转换为采样步长
+            t_range[2] /= self.num_sampled_graph_points_per_tick
 
         graph = ParametricCurve(
             lambda t: self.c2p(t, function(t)),
@@ -270,6 +322,8 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
     def get_parametric_curve(
         self,
         function: Callable[[float], Vect],
+        t_range: tuple[float, float, float] = (0, 1, 0.1),
+        *,
         bind: bool = True,
         **kwargs
     ):
@@ -289,6 +343,7 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
         '''
         graph = ParametricCurve(
             lambda t: self.coords_to_point(*function(t)),
+            t_range,
             **kwargs
         )
 
@@ -397,6 +452,13 @@ class Axes(CoordinateSystem, MarkedItem, Group, metaclass=_ItemMeta_ABCMeta):
 
 
 class ThreeDAxes(Axes):
+    '''
+    三维坐标轴
+
+    - ``z_normal`` 表示 z 坐标轴上刻度和箭头标记的面向，默认面向 ``DOWN`` 方向
+
+    其它可用参数请参考并类比 :class:`Axes` 的使用
+    '''
     z_axis_config_d = {}
 
     def __init__(
@@ -413,7 +475,6 @@ class ThreeDAxes(Axes):
     ):
         super().__init__(x_range, y_range, axis_config=axis_config, **kwargs)
 
-        self.z_range = z_range
         self.z_axis = CoordinateSystem.create_axis(
             z_range,
             axis_config=merge_dicts_recursively(
@@ -428,6 +489,7 @@ class ThreeDAxes(Axes):
             .rotate(-PI / 2, axis=UP, about_point=ORIGIN) \
             .rotate(angle_of_vector(z_normal), axis=OUT, about_point=ORIGIN) \
             .shift(self.x_axis.mark.get())
+        self.z_range = self.z_axis.x_range
 
         self.add(self.z_axis)
 
@@ -450,6 +512,34 @@ class CmptVPoints_NumberPlaneImpl(Cmpt_VPoints, impl=True):
 
 
 class NumberPlane(Axes):
+    '''
+    坐标网格
+
+    一般来说包含：
+
+    -   坐标轴：
+
+        默认是白色的坐标轴，不带箭头标志和刻度线
+
+    -   主要网格线：
+
+        颜色默认是 BLUE_D，可传入 ``background_line_style`` 调整
+
+    -   次要网格线：
+
+        -   可使用 ``faded_line_style`` 调整
+
+            当 ``faded_line_style`` 没有设置时，会将采用与 ``background_line_style`` 相同的配置，并将其颜色透明化 50% 来使用
+
+        -   使用 ``faded_line_ratio`` 调整每个网格中次要网格线的数量
+
+            例如默认的 ``4`` 表示每两个主要网格线之间等距排布了 4 个次要网格线
+
+            可调整成 ``1``，减少次要网格线的密集程度，或是直接设置成 ``0`` 来禁用次要网格线
+
+    更多参数与方法另请参考 :class:`Axes`
+    '''
+
     points = CmptInfo(CmptVPoints_NumberPlaneImpl)
 
     background_line_style_d = dict(

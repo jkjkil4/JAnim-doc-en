@@ -13,7 +13,7 @@ from janim.anims.timeline import BuiltTimeline, Timeline, TimeRange
 from janim.exception import EXITCODE_FFMPEG_NOT_FOUND, ExitException
 from janim.locale.i18n import get_local_strings
 from janim.logger import log
-from janim.render.base import create_context
+from janim.render.base import create_context_430_or_330
 from janim.render.framebuffer import create_framebuffer, framebuffer_context
 from janim.utils.simple_functions import clip
 
@@ -39,10 +39,7 @@ class VideoWriter:
         self.built = built
 
         log.debug('Initializing OpenGL context for VideoWriter ..')
-        try:
-            self.ctx = create_context(standalone=True, require=430)
-        except ValueError:
-            self.ctx = create_context(standalone=True, require=330)
+        self.ctx = create_context_430_or_330(standalone=True)
         log.debug('Created OpenGL context for VideoWriter')
 
         pw, ph = built.cfg.pixel_width, built.cfg.pixel_height
@@ -180,7 +177,7 @@ class VideoWriter:
                     self.fbo.clear(*rgb, not transparent)
                     # 在输出 mov 时，framebuffer 是透明的
                     # 为了颜色能被正确渲染到透明 framebuffer 上
-                    # 这里需要禁用自带 blending 的并使用 shader 里自定义的 blending（参考 program.py 的 injection_ja_finish_up）
+                    # 这里需要禁用自带 blending 的并使用 shader 里自定义的 blending（参考 shader.py 的 _injection_ja_finish_up）
                     # 但是 shader 里的 blending 依赖 framebuffer 信息
                     # 所以这里需要使用 glFlush 更新 framebuffer 信息使得正确渲染
                     if transparent:

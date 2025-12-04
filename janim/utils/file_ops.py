@@ -6,6 +6,8 @@ import subprocess as sp
 from functools import lru_cache
 from pathlib import Path
 
+STDIN_FILENAME = '<stdin>'
+
 
 def guarantee_existence(path: str | Path) -> str:
     if not os.path.exists(path):
@@ -13,14 +15,16 @@ def guarantee_existence(path: str | Path) -> str:
     return os.path.abspath(path)
 
 
-def getfile_or_empty(cls: type) -> str:
+def getfile_or_stdin(cls: type) -> str:
     '''
-    获取类的文件路径，如果类没有文件路径，则返回空字符串
+    获取类的文件路径，如果类没有文件路径，则认为来自 stdin
     '''
     try:
+        # 如果类是从 Python 交互式解释器中定义的，则 inspect.getfile 会抛出 OSError，返回 <stdin>
+        # 如果是在 JAnim stdin 中定义的，__file__ 本身已经被设置成 <stdin> 了，所以也会返回这个
         return inspect.getfile(cls)
     except OSError:
-        return ''
+        return STDIN_FILENAME
 
 
 @lru_cache(maxsize=1)

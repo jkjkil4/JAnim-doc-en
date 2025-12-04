@@ -98,7 +98,7 @@ def _compile_typst_by_internal_package(
             sys_inputs=sys_inputs
         )
     except typst.TypstError as e:
-        print(e.diagnostic)
+        log.error(e.diagnostic.removesuffix('\n'), extra={'raw': True})
         log.error(_('Typst compilation error. Please check the output for more information.'))
         raise ExitException(EXITCODE_TYPST_COMPILE_ERROR)
 
