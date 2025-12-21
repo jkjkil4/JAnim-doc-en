@@ -3,8 +3,9 @@ from __future__ import annotations
 import types
 from typing import TYPE_CHECKING, Iterable, Protocol, runtime_checkable
 
+import numpy as np
+
 if TYPE_CHECKING:
-    import numpy as np
     from janim.anims.animation import Animation
 
 type Vect = Iterable[float] | np.ndarray
