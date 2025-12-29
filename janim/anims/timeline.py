@@ -36,7 +36,7 @@ from janim.items.points import Group
 from janim.items.shape_matchers import SurroundingRect
 from janim.items.svg.typst import TypstText
 from janim.items.text import Text
-from janim.locale.i18n import get_local_strings
+from janim.locale.i18n import get_translator
 from janim.logger import log
 from janim.render.base import (RenderData, Renderer, apply_blend_flags,
                                create_context_430_or_330)
@@ -51,20 +51,20 @@ from janim.utils.iterables import resize_preserving_order
 from janim.utils.simple_functions import clip
 from janim.utils.space_ops import normalize
 
-_ = get_local_strings('timeline')
+_ = get_translator('janim.anims.timeline')
 
 type RenderCallsFn = Callable[[], list[tuple[Item, Callable[[Item], None]]]]
 
 
 class Timeline(metaclass=ABCMeta):
-    '''
+    """
     继承该类并实现 :meth:`construct` 方法，以实现动画的构建逻辑
 
     调用 :meth:`build` 可以得到构建完成的 :class:`Timeline` 对象
-    '''
+    """
 
     CONFIG: Config | None = None
-    '''
+    """
     在子类中定义该变量可以起到设置配置的作用，例如：
 
     .. code-block::
@@ -78,7 +78,7 @@ class Timeline(metaclass=ABCMeta):
                 ...
 
     另见：:class:`~.Config`
-    '''
+    """
 
     # region context
 
@@ -86,11 +86,11 @@ class Timeline(metaclass=ABCMeta):
 
     @staticmethod
     def get_context(raise_exc=True) -> Timeline | None:
-        '''
+        """
         调用该方法可以得到当前正在构建的 :class:`Timeline` 对象
 
         - 如果在 :meth:`construct` 方法外调用，且 ``raise_exc=True`` （默认），则抛出 :class:`~.TimelineLookupError`
-        '''
+        """
         obj = Timeline.ctx_var.get(None)
         if obj is None and raise_exc:
             f_back = inspect.currentframe().f_back
@@ -104,9 +104,9 @@ class Timeline(metaclass=ABCMeta):
 
     @dataclass
     class ScheduledTask:
-        '''
+        """
         另见 :meth:`~.Timeline.schedule`
-        '''
+        """
         at: float
         func: Callable
         args: list
@@ -114,9 +114,9 @@ class Timeline(metaclass=ABCMeta):
 
     @dataclass
     class TimeOfCode:
-        '''
+        """
         标记 :meth:`~.Timeline.construct` 执行到的代码行数所对应的时间
-        '''
+        """
         time: float
         line: int
 
@@ -127,18 +127,18 @@ class Timeline(metaclass=ABCMeta):
 
     @dataclass
     class PlayAudioInfo:
-        '''
+        """
         调用 :meth:`~.Timeline.play_audio` 的参数信息
-        '''
+        """
         audio: Audio
         range: TimeRange
         clip_range: TimeRange
 
     @dataclass
     class SubtitleInfo:
-        '''
+        """
         调用 :meth:`~.Timeline.subtitle` 的参数信息
-        '''
+        """
         text: str
         range: TimeRange
         kwargs: dict
@@ -169,23 +169,25 @@ class Timeline(metaclass=ABCMeta):
         self.time_aligner: TimeAligner = TimeAligner()
         self.item_appearances = Timeline.ItemAppearancesDict(self.time_aligner)
 
-        self.debug_list: list[Item] = []
-
         self.subtimeline_items: list[TimelineItem] = []
+
+        self.gui_command: Timeline.GuiCommand | None = None
+
+        self.debug_list: list[Item] = []
 
     @abstractmethod
     def construct(self) -> None:
-        '''
+        """
         继承该方法以实现动画的构建逻辑
-        '''
+        """
         pass    # pragma: no cover
 
     build_indent_ctx: ContextVar[int] = ContextVar('Timeline.build_indent_ctx')
 
     def build(self, *, quiet=False, hide_subtitles=False, show_debug_notice=False) -> BuiltTimeline:
-        '''
+        """
         构建动画并返回
-        '''
+        """
         indent = self.build_indent_ctx.get(-2) + 2
         indent_str = ' ' * indent
         with self.with_config(), ContextSetter(self.ctx_var, self), ContextSetter(self.build_indent_ctx, indent):
@@ -204,6 +206,17 @@ class Timeline(metaclass=ABCMeta):
 
             try:
                 self.construct()
+            except Timeline.GuiCommandInterrupt as e:
+                self.gui_command = e.command
+                self.forward(DEFAULT_DURATION, _record_lineno=False)    # 使用 GUI 命令的时候，额外产生一点时间，避免最后一帧的效果不可预览的问题
+                if not quiet:   # pragma: no cover
+                    log.info(
+                        indent_str + (
+                            _('Due to the use of a GUI command, '
+                              '"{name}" automatically generated an additional duration of {duration}s')
+                            .format(name=self.__class__.__name__, duration=DEFAULT_DURATION)
+                        )
+                    )
             finally:
                 self._build_frame = None
 
@@ -237,11 +250,11 @@ class Timeline(metaclass=ABCMeta):
 
     @contextmanager
     def with_config(self):
-        '''
+        """
         如果是第一次调用，会在当前 context 的基础上作用定义在 :class:`Timeline` 子类中的 config，并记录
 
         如果是之后的调用，则会直接设置为已记录的，确保在不同情境下的一致性
-        '''
+        """
         if self._frozen_config is None:
             cls_config: list[Config] = []
             for sup in self.__class__.mro():
@@ -261,34 +274,34 @@ class Timeline(metaclass=ABCMeta):
     # region schedule
 
     def schedule(self, at: float, func: Callable, *args, **kwargs) -> None:
-        '''
+        """
         计划执行
 
         会在进度达到 ``at`` 时，对 ``func`` 进行调用，
         可传入 ``*args`` 和 ``**kwargs``
-        '''
+        """
         task = Timeline.ScheduledTask(self.time_aligner.align_t(at), func, args, kwargs)
         insort(self.scheduled_tasks, task, key=lambda x: x.at)
 
     def schedule_and_detect_changes(self, at: float, func: Callable, *args, **kwargs) -> None:
-        '''
+        """
         与 :meth:`schedule` 类似，但是在调用 ``func`` 后会记录变化的物件的状态
-        '''
+        """
         def wrapper(*args, **kwargs) -> None:
             func(*args, **kwargs)
             self.detect_changes_of_all()
         self.schedule(at, wrapper, *args, *kwargs)
 
     def timeout(self, delay: float, func: Callable, *args, **kwargs) -> None:
-        '''
+        """
         相当于 ``schedule(self.current_time + delay, func, *args, **kwargs)``
-        '''
+        """
         self.schedule(self.current_time + delay, func, *args, **kwargs)
 
     def timeout_and_detect_changes(self, delay: float, func: Callable, *args, **kwargs) -> None:
-        '''
+        """
         与 :meth:`timeout` 类似，但是在调用 ``func`` 后会记录变化的物件的状态
-        '''
+        """
         def wrapper(*args, **kwargs) -> None:
             func(*args, **kwargs)
             self.detect_changes_of_all()
@@ -299,9 +312,9 @@ class Timeline(metaclass=ABCMeta):
     # region progress
 
     def forward(self, dt: float = DEFAULT_DURATION, *, _detect_changes=True, _record_lineno=True):
-        '''
+        """
         向前推进 ``dt`` 秒
-        '''
+        """
         if dt < 0:
             raise ValueError(_('dt can\'t be negative'))
 
@@ -326,9 +339,9 @@ class Timeline(metaclass=ABCMeta):
             )
 
     def forward_to(self, t: float, *, _detect_changes=True) -> None:
-        '''
+        """
         向前推进到 ``t`` 秒的时候
-        '''
+        """
         self.forward(t - self.current_time, _detect_changes=_detect_changes)
 
     def prepare(self, *anims: SupportsAnim, at: float = 0, name: str | None = 'prepare', **kwargs) -> TimeRange:
@@ -350,13 +363,13 @@ class Timeline(metaclass=ABCMeta):
         offset: float = 0,
         at_previous_frame: bool = True
     ) -> None:
-        '''
+        """
         标记在预览界面中，执行到当前时间点时会暂停
 
         - ``at_previous_frame`` 控制是在前一帧暂停（默认）还是在当前帧暂停
         - ``offset`` 表示偏移多少秒，例如 ``offset=2`` 则是当前位置 2s 后
         - 在 GUI 界面中，可以使用 ``Ctrl+左方向键`` 快速移动到前一个暂停点，``Ctrl+右方向键`` 快速移动到后一个
-        '''
+        """
         self.pause_points.append(Timeline.PausePoint(self.current_time + offset, at_previous_frame))
 
     # endregion
@@ -367,9 +380,9 @@ class Timeline(metaclass=ABCMeta):
         subtitle: str | Iterable[str],
         **kwargs
     ) -> TimeRange:
-        '''
+        """
         :meth:`audio_and_subtitle` 的简写
-        '''
+        """
         return self.audio_and_subtitle(file_path, subtitle, **kwargs)
 
     def audio_and_subtitle(
@@ -382,12 +395,12 @@ class Timeline(metaclass=ABCMeta):
         mul: float | Iterable[float] | None = None,
         **subtitle_kwargs
     ) -> TimeRange:
-        '''
+        """
         播放音频，并在对应的区间显示字幕
 
         - 如果 ``clip=...`` （默认，省略号），则表示自动确定裁剪区间，将前后的空白去除（可以传入 ``clip=None`` 禁用自动裁剪）
         - 如果 ``mul`` 不是 ``None``，则会将音频振幅乘以该值
-        '''
+        """
         audio = Audio(file_path)
         if mul is not None:
             audio.mul(mul)
@@ -416,7 +429,7 @@ class Timeline(metaclass=ABCMeta):
         end: float = -1,
         clip: tuple[float, float] | None = None,
     ) -> TimeRange:
-        '''
+        """
         在当前位置播放音频
 
         - 可以指定 ``begin`` 和 ``end`` 表示裁剪区段
@@ -424,7 +437,7 @@ class Timeline(metaclass=ABCMeta):
         - 若指定 ``clip``，则会覆盖 ``begin`` 和 ``end`` （可以将 ``clip`` 视为这二者的简写）
 
         返回值表示播放的时间段
-        '''
+        """
         if clip is not None:
             begin, end = clip
 
@@ -441,15 +454,15 @@ class Timeline(metaclass=ABCMeta):
         return info.range.copy()
 
     def has_audio(self) -> bool:
-        '''
+        """
         该 Timeline 自身是否有可以播放的音频
-        '''
+        """
         return len(self.audio_infos) != 0
 
     def has_audio_for_all(self) -> bool:
-        '''
+        """
         考虑所有子 Timeline，是否有可以播放的音频
-        '''
+        """
         if len(self.audio_infos) != 0:
             return True
         return any(
@@ -501,7 +514,7 @@ class Timeline(metaclass=ABCMeta):
         depth: float = -1e5,
         **kwargs
     ) -> TimeRange:
-        '''
+        """
         添加字幕
 
         - 文字可以传入一个列表，纵向排列显示
@@ -517,7 +530,7 @@ class Timeline(metaclass=ABCMeta):
         - ``subtitle_to_edge_buff`` 可配置字幕离底边的距离，默认是 ``DEFAULT_ITEM_TO_EDGE_BUFF``
 
         返回值表示显示的时间段
-        '''
+        """
         # 处理参数
         text_lst = [text] if isinstance(text, str) else text
         scale_lst = [scale] if not isinstance(scale, Iterable) else scale
@@ -573,12 +586,12 @@ class Timeline(metaclass=ABCMeta):
         return range.copy()
 
     def place_subtitle(self, subtitle: Text | TypstText, range: TimeRange) -> None:
-        '''
+        """
         被 :meth:`subtitle` 调用以将字幕放置到合适的位置：
 
         - 对于同一批添加的字幕 ``[a, b]``，则 ``a`` 放在 ``b`` 的上面
         - 如果在上文所述的 ``[a, b]`` 仍存在时，又加入了一个 ``c``，则 ``c`` 放在最上面
-        '''
+        """
         for other in reversed(self.subtitle_infos):
             # 根据 TimelineView 中排列显示标签的经验
             # 这里加了一个 np.isclose 的判断
@@ -606,7 +619,7 @@ class Timeline(metaclass=ABCMeta):
     # region ItemAppearance
 
     class ItemAppearance:
-        '''
+        """
         包含与物件显示有关的对象
 
         - ``self.stack`` 即 :class:`~.AnimStack` 对象
@@ -617,7 +630,7 @@ class Timeline(metaclass=ABCMeta):
           - 这种记录方式是 :meth:`Timeline.is_visible`、:meth:`Timeline.show`、:meth:`Timeline.hide` 运作的基础
 
         - ``self.renderer`` 表示所使用的渲染器对象
-        '''
+        """
         def __init__(self, item: Item, aligner: TimeAligner):
             self.stack = AnimStack(item, aligner)
             self.visibility: list[float] = []
@@ -625,9 +638,9 @@ class Timeline(metaclass=ABCMeta):
             self.render_disabled: bool = False
 
         def is_visible_at(self, t: float) -> bool:
-            '''
+            """
             在 ``t`` 时刻，物件是否可见
-            '''
+            """
             idx = bisect(self.visibility, t)
             return idx % 2 == 1
 
@@ -647,44 +660,44 @@ class Timeline(metaclass=ABCMeta):
     # region ItemAppearance.stack
 
     def track(self, item: Item) -> None:
-        '''
+        """
         使得 ``item`` 在每次 ``forward`` 和 ``play`` 时都会被自动调用 :meth:`~.Item.detect_change`
-        '''
+        """
         self.item_appearances[item]
 
     def track_item_and_descendants(self, item: Item, *, root_only: bool = False) -> None:
-        '''
+        """
         相当于对 ``item`` 及其所有的后代物件调用 :meth:`track`
-        '''
+        """
         for subitem in item.walk_self_and_descendants(root_only):
             self.item_appearances[subitem]
 
     def detect_changes_of_all(self) -> None:
-        '''
+        """
         检查物件的变化并将变化记录为 :class:`~.Display`
-        '''
+        """
         for item, appr in self.item_appearances.items():
             appr.stack.detect_change(item, self.current_time)
 
     def detect_changes(self, items: Iterable[Item]) -> None:
-        '''
+        """
         检查指定的列表中物件的变化，并将变化记录为 :class:`~.Display`
 
         （仅检查自身而不包括后代物件的）
-        '''
+        """
         for item in items:
             self.item_appearances[item].stack.detect_change(item, self.current_time)
 
     def compute_item[T](self, item: T, as_time: float, readonly: bool) -> T:
-        '''
+        """
         另见 :meth:`~.AnimStack.compute`
-        '''
+        """
         return self.item_appearances[item].stack.compute(as_time, readonly)
 
     def item_current[T: Item](self, item: T, *, as_time: float | None = None, root_only: bool = False) -> T:
-        '''
+        """
         另见 :meth:`~.Item.current`
-        '''
+        """
         if as_time is None:
             params = updater_params_ctx.get(None)
             if params is not None:
@@ -708,11 +721,11 @@ class Timeline(metaclass=ABCMeta):
     # region ItemAppearance.visibility
 
     def is_visible(self, item: Item) -> bool:
-        '''
+        """
         判断特定的物件目前是否可见
 
         另见：:meth:`show`、:meth:`hide`
-        '''
+        """
         # 在运行 construct 过程中，params 是 None，返回值表示最后状态是否可见
         params = updater_params_ctx.get(None)
         if params is None:
@@ -727,9 +740,9 @@ class Timeline(metaclass=ABCMeta):
             gaps.append(self.time_aligner.align_t(self.current_time))
 
     def show(self, *roots: Item, root_only=False) -> None:
-        '''
+        """
         显示物件
-        '''
+        """
         for root in roots:
             for item in root.walk_self_and_descendants(root_only):
                 self._show(item)
@@ -740,17 +753,17 @@ class Timeline(metaclass=ABCMeta):
             gaps.append(self.time_aligner.align_t(self.current_time))
 
     def hide(self, *roots: Item, root_only=False) -> None:
-        '''
+        """
         隐藏物件
-        '''
+        """
         for root in roots:
             for item in root.walk_self_and_descendants(root_only):
                 self._hide(item)
 
     def hide_all(self) -> None:
-        '''
+        """
         隐藏显示中的所有物件
-        '''
+        """
         t = self.time_aligner.align_t(self.current_time)
         for appr in self.item_appearances.values():
             gaps = appr.visibility
@@ -773,12 +786,14 @@ class Timeline(metaclass=ABCMeta):
 
     # endregion
 
+    # endregion
+
     # region lineno
 
     def get_construct_lineno(self) -> int | None:
-        '''
+        """
         得到当前在 :meth:`construct` 中执行到的行数
-        '''
+        """
         frame = inspect.currentframe().f_back
         while frame is not None:
             f_back = frame.f_back
@@ -791,9 +806,9 @@ class Timeline(metaclass=ABCMeta):
         return None     # pragma: no cover
 
     def get_lineno_at_time(self, time: float):
-        '''
+        """
         根据 ``time`` 得到对应执行到的行数
-        '''
+        """
         toc = self.times_of_code
         if not toc:
             return -1
@@ -804,10 +819,38 @@ class Timeline(metaclass=ABCMeta):
 
     # endregion
 
+    # region GUI command
+
+    class GuiCommand:
+        def __init__(self, global_t: float, text: str, frame: types.FrameType):
+            try:
+                idx = text.index(':')
+            except ValueError:
+                idx = len(text)
+
+            self.global_t = global_t
+            self.text = text
+            self.name = text[:idx].strip()
+            self.body = text[idx + 1:].strip()
+            self.filepath = frame.f_code.co_filename
+            self.lineno = frame.f_lineno
+            self.locals = frame.f_locals
+
+    class GuiCommandInterrupt(Exception):
+        def __init__(self, command: Timeline.GuiCommand):
+            super().__init__()
+            self.command = command
+
+    def __call__(self, command_text: str) -> None:
+        command = Timeline.GuiCommand(self.current_time, command_text, inspect.currentframe().f_back)
+        raise Timeline.GuiCommandInterrupt(command)
+
+    # endregion
+
     # region debug
 
     def debug(self, item: Item, msg: str | None = None) -> None:
-        '''
+        """
         将物件的动画栈显示在时间轴中
 
         .. tip::
@@ -817,7 +860,7 @@ class Timeline(metaclass=ABCMeta):
         .. warning::
 
             有些动画是覆盖性的，例如直接数据改变（``Display``） 和 ``.anim`` （``MethodTransform``），不要因为没有看到预期的栈结构而感到困惑
-        '''
+        """
         if self.show_debug_notice:
             f_back = inspect.currentframe().f_back
             filename = os.path.basename(f_back.f_code.co_filename)
@@ -863,9 +906,9 @@ class Timeline(metaclass=ABCMeta):
 
 
 class SourceTimeline(Timeline):
-    '''
+    """
     与 :class:`Timeline` 相比，会在背景显示源代码
-    '''
+    """
     def source_object(self) -> object:
         return self.__class__
 
@@ -878,9 +921,9 @@ class SourceTimeline(Timeline):
 
 
 class BuiltTimeline:
-    '''
+    """
     运行 :meth:`Timeline.build` 后返回的实例
-    '''
+    """
     def __init__(self, timeline: Timeline):
         self.timeline = timeline
         self.duration = timeline.time_aligner.align_t(timeline.current_time)
@@ -919,9 +962,9 @@ class BuiltTimeline:
         *,
         count: int = 1
     ) -> np.ndarray:
-        '''
+        """
         提取特定帧的音频流
-        '''
+        """
         begin = frame / fps
         end = (frame + count) / fps
         channels = self.cfg.audio_channels
@@ -970,10 +1013,17 @@ class BuiltTimeline:
     def current_camera_info(self) -> CameraInfo:
         return self.timeline.compute_item(self.timeline.camera, self._time, True).points.info
 
-    def render_all(self, ctx: mgl.Context, global_t: float, *, blend_on: bool = True) -> bool:
-        '''
+    def render_all(
+        self,
+        ctx: mgl.Context,
+        global_t: float,
+        *,
+        blend_on: bool = True,
+        camera: Camera | None = None
+    ) -> bool:
+        """
         渲染所有可见物件
-        '''
+        """
         timeline = self.timeline
         global_t = timeline.time_aligner.align_t_for_render(global_t)
         # 使得最后一帧采用略提早一点点的时间渲染，使得一些结束在结尾的动画不突变
@@ -984,7 +1034,8 @@ class BuiltTimeline:
             with ContextSetter(Animation.global_t_ctx, global_t),   \
                  ContextSetter(Timeline.ctx_var, self.timeline),    \
                  self.timeline.with_config():
-                camera = timeline.compute_item(timeline.camera, global_t, True)
+                if camera is None:
+                    camera = timeline.compute_item(timeline.camera, global_t, True)
                 camera_info = camera.points.info
                 anti_alias_radius = self.cfg.anti_alias_width / 2 * camera_info.scaled_factor
 
@@ -1072,7 +1123,7 @@ class BuiltTimeline:
             self.capture_fbo = create_framebuffer(ctx, pw, ph)
 
         fbo = self.capture_fbo
-        with framebuffer_context(self.capture_fbo):
+        with framebuffer_context(fbo):
             fbo.clear(*self.cfg.background_color.rgb, not transparent)
             if transparent:
                 gl.glFlush()
@@ -1084,7 +1135,7 @@ class BuiltTimeline:
         )
 
     def to_item(self, **kwargs) -> TimelineItem:
-        '''
+        """
         使用该方法可以在一个 Timeline 中插入另一个 Timeline
 
         例如：
@@ -1124,11 +1175,11 @@ class BuiltTimeline:
         - ``delay``: 延迟多少秒开始该 Timeline 的播放
         - ``first_frame_duration``: 第一帧持续多少秒
         - ``keep_last_frame``: 是否在 Timeline 结束后仍然保留最后一帧的显示
-        '''
+        """
         return TimelineItem(self, **kwargs)
 
     def to_playback_control_item(self, **kwargs) -> TimelinePlaybackControlItem:
-        '''
+        """
         使用该方法可以在一个 Timeline 中插入另一个 Timeline
 
         并且与 :class:`~.Video` 类似，可以使用 ``start``、``stop`` 以及 ``seek`` 控制播放进度
@@ -1165,14 +1216,14 @@ class BuiltTimeline:
         额外参数：
 
         - ``keep_last_frame``: 是否在 Timeline 结束后仍然保留最后一帧的显示
-        '''
+        """
         return TimelinePlaybackControlItem(self, **kwargs)
 
 
 class TimelineItem(Item):
-    '''
+    """
     详见 :meth:`BuiltTimeline.to_item`
-    '''
+    """
 
     class TIRenderer(Renderer):
         def render(self, item: TimelineItem):
@@ -1209,9 +1260,9 @@ class TimelineItem(Item):
             parent_timeline.subtimeline_items.append(self)
 
     def start(self) -> Self:
-        '''
+        """
         从当前时刻开始播放子时间轴，在此时刻之前保持显示第一帧
-        '''
+        """
         parent_timeline = Timeline.get_context()
         current_time = parent_timeline.current_time
         if self.at > current_time:
@@ -1275,9 +1326,9 @@ class PlaybackControl:
 
 
 class TimelinePlaybackControlItem(PlaybackControl, Item):
-    '''
+    """
     详见 :meth:`BuiltTimeline.to_playback_control_item`
-    '''
+    """
 
     class TPCIRenderer(Renderer):
         def render(self, item: TimelinePlaybackControlItem):
