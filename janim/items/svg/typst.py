@@ -69,7 +69,7 @@ class TypstDoc(SVGItem):
 
         # 把占位元素替换为实际物件
         if vars is not None:
-            new_children = self.children.copy()
+            new_children = self._children.copy()
             for label, item in vars_mapping.items():
                 placeholders = self.get_label(label)
 
@@ -217,9 +217,7 @@ class TypstDoc(SVGItem):
     def __getitem__(self, key: tuple[TypstPattern, types.EllipsisType]) -> Group[Group[VItem | BasepointVItem]]: ...
 
     @overload
-    def __getitem__(self, key: Iterable[int]) -> Group[VItem | BasepointVItem]: ...
-    @overload
-    def __getitem__(self, key: Iterable[bool]) -> Group[VItem | BasepointVItem]: ...
+    def __getitem__(self, key: Iterable[int] | Iterable[bool]) -> Group[VItem | BasepointVItem]: ...
 
     def __getitem__(self, key: int | slice):
         """

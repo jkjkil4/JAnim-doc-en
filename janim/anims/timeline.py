@@ -13,6 +13,7 @@ from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable, Iterable, Self, overload
 
 import moderngl as mgl
@@ -32,7 +33,7 @@ from janim.constants import (BLACK, DEFAULT_DURATION, DOWN, FOREVER,
 from janim.exception import TimelineLookupError
 from janim.items.audio import Audio
 from janim.items.item import Item
-from janim.items.points import Group
+from janim.items.points import Group, Point
 from janim.items.shape_matchers import SurroundingRect
 from janim.items.svg.typst import TypstText
 from janim.items.text import Text
@@ -193,8 +194,13 @@ class Timeline(metaclass=ABCMeta):
         with self.with_config(), ContextSetter(self.ctx_var, self), ContextSetter(self.build_indent_ctx, indent):
 
             self.config_getter = ConfigGetter(config_ctx_var.get())
+
             self.camera = Camera()
             self.track(self.camera)
+
+            self.light_source = Point([-9, -7, 10])
+            self.track(self.light_source)
+
             self.hide_subtitles = hide_subtitles
             self.show_debug_notice = show_debug_notice
 
@@ -315,6 +321,7 @@ class Timeline(metaclass=ABCMeta):
         """
         向前推进 ``dt`` 秒
         """
+        dt = float(dt)  # 避免 numpy 类型浮点数可能导致的问题
         if dt < 0:
             raise ValueError(_('dt can\'t be negative'))
 
@@ -706,14 +713,12 @@ class Timeline(metaclass=ABCMeta):
             as_time = Animation.global_t_ctx.get(None)
 
         if as_time is None:
-            return item.copy(root_only=root_only)
+            as_time = self.current_time
 
         root = self.compute_item(item, as_time, False)
         if not root_only:
-            assert not root.children and root.stored_children is not None
-            root.stored = False
-            root.add(*[self.item_current(sub, as_time=as_time) for sub in root.stored_children])
-            root.reset_refresh()
+            child_restorer = partial(self.item_current, as_time=as_time)
+            root._unstore(child_restorer)
         return root
 
     # endregion
@@ -1030,75 +1035,130 @@ class BuiltTimeline:
         if global_t == self.duration:
             global_t -= 1e-4
         self._time = global_t
+
         try:
+            # 有必要在计算 camera 和 light_source 之前设置这些 context
+            # 因为用户有可能给 camera 或 light_source 使用 updater，updater 需要这些信息
             with ContextSetter(Animation.global_t_ctx, global_t),   \
                  ContextSetter(Timeline.ctx_var, self.timeline),    \
                  self.timeline.with_config():
+
+                # 计算 camera 和 light_source
                 if camera is None:
                     camera = timeline.compute_item(timeline.camera, global_t, True)
                 camera_info = camera.points.info
+                light_source = timeline.compute_item(timeline.light_source, global_t, True)
                 anti_alias_radius = self.cfg.anti_alias_width / 2 * camera_info.scaled_factor
 
+                # 用于渲染的基础信息
+                # - 会提供给 _uniforms_data 以设置全局 shader uniform
+                # - 会设置到 Renderer.data_ctx 使得在渲染器中可以访问到这些信息
+                render_data = RenderData(
+                    ctx=ctx,
+                    camera_info=camera_info,
+                    light_source_location=light_source.location,
+                    anti_alias_radius=anti_alias_radius
+                )
+
                 with blend_context(ctx, True) if blend_on else nullcontext(), \
-                     uniforms(ctx,
-                              JA_FRAMEBUFFER=FRAME_BUFFER_BINDING,
-                              JA_CAMERA_SCALED_FACTOR=camera_info.scaled_factor,
-                              JA_CAMERA_CENTER=camera_info.center,
-                              JA_CAMERA_LOC=camera_info.camera_location,
-                              JA_CAMERA_RIGHT=normalize(camera_info.horizontal_vect),
-                              JA_CAMERA_UP=normalize(camera_info.vertical_vect),
-                              JA_VIEW_MATRIX=camera_info.view_matrix.T.flatten(),
-                              JA_FIXED_DIST_FROM_PLANE=camera_info.fixed_distance_from_plane,
-                              JA_PROJ_MATRIX=camera_info.proj_matrix.T.flatten(),
-                              JA_FRAME_RADIUS=camera_info.frame_radius,
-                              JA_ANTI_ALIAS_RADIUS=anti_alias_radius), \
-                     ContextSetter(Renderer.data_ctx, RenderData(ctx=ctx,
-                                                                 camera_info=camera_info,
-                                                                 anti_alias_radius=anti_alias_radius)):
-                    render_datas: list[tuple[Timeline.ItemAppearance, Item]] = []
-                    # 反向遍历一遍所有物件，这是为了让一些效果标记原有的物件不进行渲染
-                    # （会把所应用的物件的 render_disabled 置为 True，所以在下面可以判断这个变量过滤掉它们）
-                    for _, appr in reversed(self.visible_item_segments.get(global_t)):
-                        if not appr.is_visible_at(global_t):
-                            continue
-                        data = appr.stack.compute(global_t, True)
-                        data._mark_render_disabled()
-                        render_datas.append((appr, data))
-                    # 添加额外的渲染调用，例如 Transform 产生的
-                    # 这里也有可能产生 render_disabled 标记
-                    additional: list[list[tuple[Item, Callable[[Item], None]]]] = []
-                    for rcc in self.visible_additional_callbacks_segments.get(global_t):
-                        if rcc.t_range.end is FOREVER:
-                            if not rcc.t_range.at <= global_t:
-                                continue
-                        else:
-                            if not rcc.t_range.at <= global_t < rcc.t_range.end:
-                                continue
-                        additional.append(rcc.func())
-                    # 剔除被标记 render_disabled 的物件，得到 render_items_final
-                    render_datas_final: list[tuple[Item, Callable]] = []
-                    for appr, data in render_datas:
-                        if appr.render_disabled:
-                            appr.render_disabled = False    # 重置，因为每次都要重新标记
-                            continue
-                        render_datas_final.append((data, appr.render))
-                    render_datas_final.extend(it.chain(*additional))
-                    # 按深度排序
-                    render_datas_final.sort(key=lambda x: x[0].depth, reverse=True)
-                    # 渲染
+                     self._uniforms_context(render_data), \
+                     ContextSetter(Renderer.data_ctx, render_data):
+
+                    # 得到所有需要渲染的物件
+                    items_render = self._get_items_render(global_t)
+
+                    # 按照特定的方法排序这些物件
+                    self._sort_items_render(items_render, camera_info)
+
+                    # 渲染这些物件
                     blending = get_uniforms_context_var(ctx).get().get('JA_BLENDING')
-                    for data, render in render_datas_final:
-                        render(data)
-                        # 如果没有 blending，我们认为当前是在向透明 framebuffer 绘制
-                        # 所以每次都需要使用 glFlush 更新 framebuffer 信息使得正确渲染
-                        if not blending:
-                            gl.glFlush()
+                    self._render_items(items_render, blending)
 
         except Exception:
             traceback.print_exc()
             return False
 
         return True
+
+    def _uniforms_context(self, data: RenderData):
+        camera_info = data.camera_info
+        return uniforms(
+            data.ctx,
+            JA_FRAMEBUFFER=FRAME_BUFFER_BINDING,
+            JA_CAMERA_SCALED_FACTOR=camera_info.scaled_factor,
+            JA_CAMERA_CENTER=camera_info.center,
+            JA_CAMERA_LOC=camera_info.camera_location,
+            JA_CAMERA_RIGHT=normalize(camera_info.horizontal_vect),
+            JA_CAMERA_UP=normalize(camera_info.vertical_vect),
+            JA_VIEW_MATRIX=camera_info.view_matrix.T.flatten(),
+            JA_FIXED_DIST_FROM_PLANE=camera_info.fixed_distance_from_plane,
+            JA_PROJ_MATRIX=camera_info.proj_matrix.T.flatten(),
+            JA_FRAME_RADIUS=camera_info.frame_radius,
+            JA_ANTI_ALIAS_RADIUS=data.anti_alias_radius,
+            JA_LIGHT_SOURCE=data.light_source_location
+        )
+
+    type _RenderFunc = Callable[[Item], None]
+    type _ItemWithRenderFunc = tuple[Item, _RenderFunc]
+
+    def _get_items_render(self, global_t: float) -> list[_ItemWithRenderFunc]:
+        render_apprs: list[tuple[Timeline.ItemAppearance, Item]] = []
+
+        # 反向遍历一遍所有物件，这是为了让一些效果标记原有的物件不进行渲染
+        # （会把所应用的物件的 render_disabled 置为 True，所以在下面可以判断这个变量过滤掉它们）
+        for _, appr in reversed(self.visible_item_segments.get(global_t)):
+            if not appr.is_visible_at(global_t):
+                continue
+            data = appr.stack.compute(global_t, True)
+            data._mark_render_disabled()
+            render_apprs.append((appr, data))
+
+        # 收集额外的渲染调用，例如 Transform 产生的
+        # 这里也有可能产生 render_disabled 标记
+        additional: list[list[BuiltTimeline._ItemWithRenderFunc]] = []
+        for rcc in self.visible_additional_callbacks_segments.get(global_t):
+            if rcc.t_range.end is FOREVER:
+                if not rcc.t_range.at <= global_t:
+                    continue
+            else:
+                if not rcc.t_range.at <= global_t < rcc.t_range.end:
+                    continue
+            additional.append(rcc.func())
+
+        # 剔除被标记 render_disabled 的物件，得到 items_render
+        items_render: list[BuiltTimeline._ItemWithRenderFunc] = []
+        for appr, data in render_apprs:
+            if appr.render_disabled:
+                appr.render_disabled = False    # 重置，因为每次都要重新标记
+                continue
+            items_render.append((data, appr.render))
+
+        # 将 additional 的内容也添加到 items_render 中
+        items_render.extend(it.chain(*additional))
+
+        return items_render
+
+    def _sort_items_render(self, items_render: list[_ItemWithRenderFunc], info: CameraInfo) -> None:
+        camera_vec = normalize(-info.camera_axis)
+        camera_loc = info.camera_location
+
+        def key(x: BuiltTimeline._ItemWithRenderFunc):
+            ref = x[0].distance_sort_reference_point
+            if ref is None:
+                distance = np.inf
+            else:
+                distance = np.dot(camera_vec, ref - camera_loc)
+            return (distance, x[0].depth)
+
+        items_render.sort(key=key, reverse=True)
+
+    def _render_items(self, items_render: list[_ItemWithRenderFunc], blending: bool) -> None:
+        for data, render in items_render:
+            render(data)
+            # 如果没有 blending，我们认为当前是在向透明 framebuffer 绘制
+            # 所以每次都需要使用 glFlush 更新 framebuffer 信息使得正确渲染
+            if not blending:
+                gl.glFlush()
 
     def capture(self, global_t: float, *, transparent: bool = True, ctx: mgl.Context | None = None) -> Image.Image:
         if ctx:
@@ -1176,6 +1236,7 @@ class BuiltTimeline:
         - ``first_frame_duration``: 第一帧持续多少秒
         - ``keep_last_frame``: 是否在 Timeline 结束后仍然保留最后一帧的显示
         """
+        self._warning_if_has_gui_command()
         return TimelineItem(self, **kwargs)
 
     def to_playback_control_item(self, **kwargs) -> TimelinePlaybackControlItem:
@@ -1217,7 +1278,17 @@ class BuiltTimeline:
 
         - ``keep_last_frame``: 是否在 Timeline 结束后仍然保留最后一帧的显示
         """
+        self._warning_if_has_gui_command()
         return TimelinePlaybackControlItem(self, **kwargs)
+
+    def _warning_if_has_gui_command(self) -> None:
+        command = self.timeline.gui_command
+        if command is not None:
+            log.warning(
+                _('GUI command in a sub-Timeline is ignored; '
+                  'defined in "{file}" at line {lineno}')
+                .format(file=os.path.basename(command.filepath), lineno=command.lineno)
+            )
 
 
 class TimelineItem(Item):

@@ -1,3 +1,5 @@
+:orphan:
+
 为文档国际化作出贡献
 ===========================
 
@@ -39,7 +41,6 @@
 .. code-block:: sh
 
     pip install -e .[gui,doc]
-    pip install sphinx-intl
 
 2. 提取翻译文本
 

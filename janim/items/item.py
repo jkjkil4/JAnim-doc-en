@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import (TYPE_CHECKING, Any, Callable, Iterable, Self,
                     SupportsIndex, overload)
 
+import numpy as np
+
 from janim.components.component import CmptInfo, Component, _CmptGroup
 from janim.components.depth import Cmpt_Depth
 from janim.exception import AsTypeError, GetItemError
@@ -113,6 +115,14 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
     depth = CmptInfo(Cmpt_Depth[Self], 0)
 
+    # 在默认情况下为 None，会由子类（例如 `VItem`）使用
+    #
+    # @property
+    # def distance_sort_refernece_point(self) -> np.ndarray | None: ...
+    #
+    # 来明确具体实现
+    distance_sort_reference_point: np.ndarray | None = None
+
     def __init__(
         self,
         *args,
@@ -121,9 +131,9 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     ):
         super().__init__(*args)
 
-        self.stored: bool = False
-        self.stored_parents: list[Item] | None = None
-        self.stored_children: list[Item] | None = None
+        self._stored: bool = False
+        self._stored_parents: list[Item] | None = None
+        self._stored_children: list[Item] | None = None
 
         from janim.anims.timeline import Timeline
         self.timeline = Timeline.get_context(raise_exc=False)
@@ -133,6 +143,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         self._fix_in_frame = False
         self._depth_test = False
+        self._distance_sort = False
 
         self._saved_states: dict[str, Item.SavedState[Self]] = {}
 
@@ -307,6 +318,10 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         from janim.anims.updater import MethodUpdaterArgsBuilder
         return MethodUpdaterArgsBuilder(self)
 
+    # 仅用于在创建动画时忘记使用 .anim 或 .update 时抛出错误，另见 AnimGroup 的 _get_anim_object
+    def __anim__(self):
+        raise NotImplementedError()
+
     # 使得 .anim() .update() 后仍有代码提示
     @overload
     def __call__(self, **kwargs) -> Self: ...
@@ -314,11 +329,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     @overload
     def __getitem__(self, key: int) -> Item: ...
     @overload
-    def __getitem__(self, key: slice) -> Group: ...
-    @overload
-    def __getitem__(self, key: Iterable[int]) -> Group: ...
-    @overload
-    def __getitem__(self, key: Iterable[bool]) -> Group: ...
+    def __getitem__(self, key: slice | Iterable[int] | Iterable[bool]) -> Group: ...
 
     def __getitem__(self, key):
         if isinstance(key, Iterable) and not isinstance(key, list):
@@ -326,28 +337,22 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         # example: item[0]
         if isinstance(key, SupportsIndex):
-            return self.children[key]
+            return self._children[key]
 
         from janim.items.points import Group
 
         match key:
             # example: item[0:2]
             case slice():
-                return Group(*self.children[key])
+                return Group(*self._children[key])
             # example: item[False, True, True]
             case list() if all(isinstance(x, bool) for x in key):
                 return Group(*[sub for sub, flag in zip(self, key) if flag])
             # example: item[0, 3, 4]
             case list() if all(isinstance(x, SupportsIndex) for x in key):
-                return Group(*[self.children[x] for x in key])
+                return Group(*[self._children[x] for x in key])
 
         raise GetItemError(_('Unsupported key: {}').format(key))
-
-    def __iter__(self):
-        return iter(self.children)
-
-    def __len__(self) -> int:
-        return len(self.children)
 
     def __mul__(self, other: int) -> Group[Self]:
         assert isinstance(other, int)
@@ -608,10 +613,10 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     # region data
 
     def get_parents(self):
-        return self.stored_parents if self.stored else self.parents
+        return self._stored_parents if self._stored else self._parents
 
     def get_children(self):
-        return self.stored_children if self.stored else self.children
+        return self._stored_children if self._stored else self._children
 
     def not_changed(self, other: Self) -> bool:
         if self.get_children() != other.get_children():
@@ -657,15 +662,15 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         copy_item.reset_refresh()
         setattr(copy_item, SIGNAL_OBJ_SLOTS_NAME, None)
 
-        copy_item.parents = []
-        copy_item.children = []
+        copy_item._parents = []
+        copy_item._children = []
 
         if root_only:
-            copy_item.children_changed()
+            copy_item._children_changed()
         else:
             # .add 里已经调用了 .children_changed
             copy_item.add(*[item.copy() for item in self])
-        copy_item.parents_changed()
+        copy_item._parents_changed()
 
         self._copy_cmpts(self, copy_item)
         copy_item.init_connect()
@@ -675,11 +680,14 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         """
         将该物件的数据设置为与传入的物件相同（以复制的方式，不是引用）
         """
+        if self.timeline is not None:
+            force_detect_items = set(self.walk_self_and_descendants())
+
         # self.parents 不变
 
-        children = self.children.copy()
+        children = self._children.copy()
         self.clear_children()
-        for old, new in it.zip_longest(children, other.children):
+        for old, new in it.zip_longest(children, other._children):
             if new is None:
                 break
             if old is None or type(old) is not type(new):
@@ -690,10 +698,21 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         for key in self.components.keys() | other.components.keys():
             self.components[key].become(other.components[key])
 
-        # 如果设置了 auto_visible 且根物件是可见的
-        # 那么 become 的最后会把所有子物件设为可见
-        if auto_visible and self.timeline is not None and self.timeline.is_visible(self):
-            self.timeline.show(self)
+        if self.timeline is not None:
+            # 强制将没有变化的物件以及所有后代物件也产生 detect_change 记录
+            # 从而正确停用作用在根物件上的 GroupUpdater
+            force_detect_items.union(self.walk_self_and_descendants())
+            for item in force_detect_items:
+                appr = self.timeline.item_appearances.get(item, None)
+                if appr is None:
+                    continue
+                if not appr.stack.is_changed(item):
+                    appr.stack.detect_change(item, self.timeline.current_time, force=True)
+
+            # 如果设置了 auto_visible 且根物件是可见的
+            # 那么 become 的最后会把所有子物件设为可见
+            if auto_visible and self.timeline.is_visible(self):
+                self.timeline.show(self)
 
         return self
 
@@ -702,21 +721,21 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         copy_item.reset_refresh()
         setattr(copy_item, SIGNAL_OBJ_SLOTS_NAME, None)
 
-        copy_item.parents = []
-        copy_item.children = []
+        copy_item._parents = []
+        copy_item._children = []
 
-        copy_item.stored = True
-        copy_item.stored_parents = self.get_parents().copy()
-        copy_item.stored_children = self.get_children().copy()
+        copy_item._stored = True
+        copy_item._stored_parents = self.get_parents().copy()
+        copy_item._stored_children = self.get_children().copy()
 
         self._copy_cmpts(self, copy_item)
         copy_item.init_connect()
         return copy_item
 
     def restore(self, other: Item) -> Self:
-        if self.stored:
-            self.stored_parents = other.get_parents().copy()
-            self.stored_children = other.get_children().copy()
+        if self._stored:
+            self._stored_parents = other.get_parents().copy()
+            self._stored_children = other.get_children().copy()
 
         for key in self.components.keys() & other.components.keys():
             self.components[key].become(other.components[key])
@@ -735,6 +754,12 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         """
         self.become(self.current(as_time=self.timeline.current_time))
         return self
+
+    def _unstore(self, child_restorer: Callable[[Item], Item]) -> None:
+        assert not self._children and self._stored_children is not None
+        self._stored = False
+        self.add(*[child_restorer(sub) for sub in self._stored_children])
+        self.reset_refresh()
 
     @classmethod
     def align_for_interpolate(
@@ -767,8 +792,8 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         # align children
         max_len = max(len(item1.get_children()), len(item2.get_children()))
-        aligned.data1.stored_children = resize_preserving_order(item1.get_children(), max_len)
-        aligned.data2.stored_children = resize_preserving_order(item2.get_children(), max_len)
+        aligned.data1._stored_children = resize_preserving_order(item1.get_children(), max_len)
+        aligned.data2._stored_children = resize_preserving_order(item2.get_children(), max_len)
 
         return aligned
 
@@ -814,6 +839,14 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
     def is_applied_depth_test(self) -> bool:
         return self._depth_test
+
+    def apply_distance_sort(self, on: bool = True, *, root_only: bool = False) -> Self:
+        for item in self.walk_self_and_descendants(root_only):
+            item._distance_sort = on
+        return self
+
+    def is_applied_distance_sort(self) -> bool:
+        return self._distance_sort
 
     # endregion
 

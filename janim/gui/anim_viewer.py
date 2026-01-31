@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QApplication, QCompleter, QLabel, QLineEdit,
                                QSizePolicy, QSplitter, QStackedLayout, QWidget)
 
 from janim.anims.timeline import BuiltTimeline, Timeline
+from janim.components.data import Cmpt_Data
 from janim.exception import ExitException
 from janim.gui.application import Application
 from janim.gui.functions.selector import Selector
@@ -459,6 +460,8 @@ class AnimViewer(QMainWindow):
             module_name = '__janim_main__'
 
         reset_reloads_state()
+        Cmpt_Data._clear_resolve_cache()
+
         loader = importlib.machinery.SourceFileLoader(module_name, module.__file__)
         module = loader.load_module()
         timeline_class = getattr(module, new_timeline_name, None)
@@ -847,6 +850,9 @@ class AnimViewer(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         super().closeEvent(event)
+
+        if self.audio_player is not None:
+            self.audio_player.close()
 
         if self.has_connection():
             self.send_janim_cmd(Cmd.CloseEvent)

@@ -132,7 +132,7 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
 
     def walk_same_cmpt_of_descendants_without_mock(self) -> Generator[Self, None, None]:
         item = self.bind.at_item
-        if not item.stored:
+        if not item._stored:
             for item in item.walk_descendants(self.bind.decl_cls):
                 cmpt = self.get_same_cmpt_without_mock(item)
                 if cmpt is None:
@@ -151,6 +151,10 @@ class Component[ItemT](refresh.Refreshable, metaclass=_CmptMeta):
         return AlignedData(cmpt1, cmpt1, cmpt1)
 
     def interpolate(self, cmpt1, cmpt2, alpha: float, *, path_func=None) -> None: ...
+
+    # 仅用于在创建动画时忘记使用 .anim 或 .update 时抛出错误，另见 AnimGroup 的 _get_anim_object
+    def __anim__(self):
+        raise NotImplementedError()
 
 
 class CmptInfo[T]:

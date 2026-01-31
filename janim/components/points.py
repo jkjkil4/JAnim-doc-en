@@ -53,7 +53,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         item = bind.at_item
 
-        item.__class__.children_changed.connect_refresh(item, self, Cmpt_Points.box.fget)
+        item.__class__._children_changed.connect_refresh(item, self, Cmpt_Points.box.fget)
 
     def copy(self) -> Self:
         cmpt_copy = super().copy()
@@ -849,6 +849,27 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         normal = eigvecs[:, np.argmin(eigvals)]
         return normalize(normal)
 
+    def face_to_vector(
+        self,
+        vector: Vect,
+        *,
+        about_point: Vect | None = None,
+        about_edge: Vect | None = ORIGIN,
+        root_only: bool = False,
+    ) -> Self:
+        """
+        旋转物件使其法方向与 ``vector`` 同向
+
+        - 视 ``about_point`` 为参考点，若其为 ``None``，则将物件在 ``about_edge`` 方向上的边界作为 ``about_point``
+        """
+        self.apply_matrix(
+            rotation_between_vectors(self.unit_normal, vector),
+            about_point=about_point,
+            about_edge=about_edge,
+            root_only=root_only
+        )
+        return self
+
     def face_to_camera(
         self,
         camera: Camera | types.EllipsisType = ...,
@@ -1048,7 +1069,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         cmpts = [
             self.get_same_cmpt(item)
-            for item in self.bind.at_item.children
+            for item in self.bind.at_item._children
         ]
 
         for cmpt1, cmpt2 in zip(cmpts, cmpts[1:]):
@@ -1118,7 +1139,7 @@ class Cmpt_Points[ItemT](Component[ItemT]):
 
         cmpts = [
             self.get_same_cmpt(item)
-            for item in self.bind.at_item.children
+            for item in self.bind.at_item._children
         ]
 
         n_rows, n_cols = self._format_rows_cols(len(cmpts), n_rows, n_cols)
@@ -1147,12 +1168,12 @@ class Cmpt_Points[ItemT](Component[ItemT]):
         aligned_edge: Vect = ORIGIN,
         center: bool = True
     ) -> Self:
-        if self.bind is None or not self.bind.at_item.children:
+        if self.bind is None or not self.bind.at_item._children:
             return self
 
         cmpts = [
             self.get_same_cmpt(item)
-            for item in self.bind.at_item.children
+            for item in self.bind.at_item._children
         ]
         offset = np.array(offset)
 
