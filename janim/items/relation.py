@@ -4,7 +4,6 @@ import random
 from typing import Callable, Generator, Self, overload
 
 import janim.utils.refresh as refresh
-from janim.utils.deprecation import deprecated
 from janim.utils.signal import Signal
 
 
@@ -109,6 +108,7 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         :param prepend: 默认为 ``False``，如果为 ``True``，那么插入到子物件列表的开头
         """
         if insert is not None:
+            from janim.utils.deprecation import deprecated
             deprecated(
                 'insert',
                 'prepend',
@@ -116,11 +116,13 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
             )
 
         for obj in (reversed(objs) if prepend else objs):
-            if obj not in self._children:
-                if prepend:
-                    self._children.insert(0, obj)
-                else:
-                    self._children.append(obj)
+            if obj in self._children:
+                continue
+
+            if prepend:
+                self._children.insert(0, obj)
+            else:
+                self._children.append(obj)
 
             assert self not in obj._parents
             obj._parents.append(self)
@@ -137,8 +139,10 @@ class Relation[GRelT: 'Relation'](refresh.Refreshable):
         :param objs: 要插入的子物件
         """
         for i, obj in enumerate(objs):
-            if obj not in self._children:
-                self._children.insert(index + i, obj)
+            if obj in self._children:
+                continue
+
+            self._children.insert(index + i, obj)
 
             assert self not in obj._parents
             obj._parents.append(self)

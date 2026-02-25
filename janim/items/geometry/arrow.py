@@ -153,12 +153,15 @@ class Arrow(Line):
         buff: float = 0.25,
         max_length_to_tip_length_ratio: float | None = 0.3,
         tip_kwargs: dict = {},
+        depth: float | None = None,
         **kwargs
     ) -> None:
         if 'center_anchor' not in tip_kwargs:
             tip_kwargs['center_anchor'] = CenterAnchor.Center
+        if depth is not None and 'depth' not in tip_kwargs:
+            tip_kwargs['depth'] = depth
 
-        super().__init__(start, end, buff=buff, **kwargs)
+        super().__init__(start, end, buff=buff, depth=depth, **kwargs)
         self.max_length_to_tip_length_ratio = max_length_to_tip_length_ratio
 
         self.init_tips(tip_kwargs)
@@ -178,9 +181,19 @@ class Arrow(Line):
 
     def _get_shrink_values(self) -> tuple[float, float]:
         """
-        返回用于着色器的 (shrink_left_length, shrink_right_length)
+        返回用于着色器的 (shrink_left_ratio, shrink_right_ratio)
         """
-        return (-1.0, self._get_shrink_length(self.tip))
+        return (-1.0, self._get_shrink_ratio(self.tip, True))
+
+    def _get_shrink_ratio(self, tip: ArrowTip, right_side: bool) -> float:
+        points = self.points.get()
+        if len(points) < 3:
+            return -1.0
+        if right_side:
+            el = get_norm(points[-1] - points[-3])
+        else:
+            el = get_norm(points[0] - points[2])
+        return Arrow._get_shrink_length(tip) / el
 
     @staticmethod
     def _get_shrink_length(tip: ArrowTip) -> float:
@@ -316,7 +329,7 @@ class DoubleArrow(Arrow):
         return copy_item
 
     def _get_shrink_values(self) -> tuple[float, float]:
-        return (self._get_shrink_length(self.start_tip), self._get_shrink_length(self.tip))
+        return (self._get_shrink_ratio(self.start_tip, False), self._get_shrink_ratio(self.tip, True))
 
     def place_tip(self) -> Self:
         super().place_tip()

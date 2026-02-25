@@ -16,7 +16,7 @@ from janim.items.item import Item
 from janim.items.points import Group
 from janim.items.text import BasepointVItem, Text, TextLine
 from janim.items.vitem import VItem
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.utils.bezier import PathBuilder, quadratic_bezier_points_for_arc
 from janim.utils.config import Config
@@ -155,7 +155,7 @@ class SVGItem(Group[SVGElemItem]):
 
         builders: list[ItemBuilder] = []
         indexers: GroupIndexer = defaultdict(list)
-        group_finder: defaultdict[Any, list[str]] = defaultdict(list)
+        group_finder: defaultdict[Any, set[str]] = defaultdict(set)
         for shape in svg.elements():
             if isinstance(shape, se.Use):
                 continue
@@ -171,7 +171,7 @@ class SVGItem(Group[SVGElemItem]):
                 for elem in shape.select():
                     if not isinstance(elem, se.Shape):
                         continue
-                    group_finder[id(elem)].append(name)
+                    group_finder[id(elem)].add(name)
                 continue
 
             if isinstance(shape, se.Path):
@@ -204,7 +204,7 @@ class SVGItem(Group[SVGElemItem]):
             if cls.group_key is not None:
                 name = shape.values.get(cls.group_key, None)
                 if name is not None:
-                    group_finder[id(shape)].append(name)
+                    group_finder[id(shape)].add(name)
 
             # 其他处理
             builders.append(builder)

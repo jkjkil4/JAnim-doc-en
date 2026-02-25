@@ -8,6 +8,8 @@ import sys
 
 from janim import __version__
 
+os.environ['JANIM_SPHINX_BUILD'] = '1'
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -28,6 +30,7 @@ extensions = [
     'extensions.code_desc_ext',
     'extensions.translatable_tab_ext',
     'extensions.random_choice',
+    'extensions.gettext_filters',
 ]
 autodoc_member_order = 'bysource'
 # autodoc_default_flags = ['members', 'show-inheritance']

@@ -17,7 +17,7 @@ from janim.components.component import Component
 from janim.constants import C_LABEL_ANIM_ABSTRACT
 from janim.exception import UpdaterError
 from janim.items.item import Item
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.render.base import Renderer
 from janim.utils.rate_functions import RateFunc, linear
 from janim.utils.simple_functions import clip
@@ -490,7 +490,11 @@ class ItemUpdater(Animation):
         self.renderers: dict[type, Renderer] = {}
 
     def _time_fixed(self) -> None:
-        self.timeline.add_additional_render_calls_callback(self.t_range, self.render_calls_callback)
+        self.timeline.add_additional_render_calls_callback(
+            self.t_range,
+            self.render_calls_callback,
+            None if self.item is None else [self.item]
+        )
 
         if self.item is None:
             return

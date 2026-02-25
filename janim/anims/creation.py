@@ -127,6 +127,8 @@ class Destruction(ShowPartial):
 
     - 与 :class:`Uncreate` 方向相反
     """
+    label_color = C_LABEL_ANIM_OUT
+
     def __init__(
         self,
         item: Item,
@@ -265,6 +267,12 @@ class Write(DrawBorderThenFill):
 
 
 class ShowIncreasingSubsets(Animation):
+    """
+    逐个显现子物件
+
+    注：该动画目前在 :class:`~.FrameEffect` 中无效
+    """
+
     label_color = C_LABEL_ANIM_IN
 
     def __init__(
@@ -295,7 +303,11 @@ class ShowIncreasingSubsets(Animation):
             for i, child in enumerate(self.group)
         ]
         self.n_children = len(self.group)
-        self.timeline.add_additional_render_calls_callback(self.t_range, self.additional_callback)
+        self.timeline.add_additional_render_calls_callback(
+            self.t_range,
+            self.additional_callback,
+            [self.group]
+        )
 
     def additional_callback(self):
         global_t = Animation.global_t_ctx.get()

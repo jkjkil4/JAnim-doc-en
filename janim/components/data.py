@@ -11,7 +11,7 @@ import numpy as np
 
 from janim.components.component import CmptInfo, Component
 from janim.exception import JAnimException
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.typing import SupportsTracking
 from janim.utils.bezier import interpolate
@@ -289,6 +289,8 @@ class CustomData[ItemT, T](CmptInfo[Cmpt_Data[ItemT, T]]):
     可以完善类型注解
 
     .. code-block:: python
+
+        from typing import TypedDict
 
         class PhysicData(TypedDict):
             speed: np.ndarray

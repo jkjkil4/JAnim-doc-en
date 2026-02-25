@@ -18,6 +18,7 @@ from janim.items.points import Group, MarkedItem, NamedGroupMixin, Points
 from janim.items.svg.typst import TypstMath
 from janim.items.vitem import DEFAULT_STROKE_RADIUS
 from janim.typing import JAnimColor, RangeSpecifier, Vect, VectArray
+from janim.utils.deprecation import deprecated_classvar
 from janim.utils.dict_ops import merge_dicts_recursively
 from janim.utils.space_ops import angle_of_vector, cross
 
@@ -183,12 +184,31 @@ class Axes(CoordinateSystem, MarkedItem, NamedGroupMixin, metaclass=_ItemMeta_AB
         注：如果需要给某个坐标轴单独指定 ``unit_size``，请传入对应的 ``*_axis_config``
     """
 
-    axis_config_d = dict(
+    default_axis_config = dict(
         numbers_to_exclude=[0]
     )
-    x_axis_config_d = {}
-    y_axis_config_d = dict(
+    default_x_axis_config = {}
+    default_y_axis_config = dict(
         line_to_number_direction=UP,
+    )
+
+    axis_config_d = deprecated_classvar(
+        default_axis_config,
+        'Axes.axis_config_d',
+        'Axes.default_axis_config',
+        remove=(4, 3)
+    )
+    x_axis_config_d = deprecated_classvar(
+        default_x_axis_config,
+        'Axes.x_axis_config_d',
+        'Axes.default_x_axis_config',
+        remove=(4, 3)
+    )
+    y_axis_config_d = deprecated_classvar(
+        default_y_axis_config,
+        'Axes.y_axis_config_d',
+        'Axes.default_y_axis_config',
+        remove=(4, 3)
     )
 
     def __init__(
@@ -230,8 +250,8 @@ class Axes(CoordinateSystem, MarkedItem, NamedGroupMixin, metaclass=_ItemMeta_AB
         x_axis = CoordinateSystem.create_axis(
             x_range,
             axis_config=merge_dicts_recursively(
-                self.axis_config_d,
-                self.x_axis_config_d,
+                self.default_axis_config,
+                self.default_x_axis_config,
                 axis_config,
                 x_axis_config
             ),
@@ -242,8 +262,8 @@ class Axes(CoordinateSystem, MarkedItem, NamedGroupMixin, metaclass=_ItemMeta_AB
         y_axis = CoordinateSystem.create_axis(
             y_range,
             axis_config=merge_dicts_recursively(
-                self.axis_config_d,
-                self.y_axis_config_d,
+                self.default_axis_config,
+                self.default_y_axis_config,
                 axis_config,
                 y_axis_config
             ),
@@ -469,7 +489,14 @@ class ThreeDAxes(Axes):
 
     其它可用参数请参考并类比 :class:`Axes` 的使用
     """
-    z_axis_config_d = {}
+    default_z_axis_config = {}
+
+    z_axis_config_d = deprecated_classvar(
+        default_z_axis_config,
+        'ThreeDAxes.z_axis_config_d',
+        'ThreeDAxes.default_z_axis_config',
+        remove=(4, 3)
+    )
 
     def __init__(
         self,
@@ -489,8 +516,8 @@ class ThreeDAxes(Axes):
         z_axis = CoordinateSystem.create_axis(
             z_range,
             axis_config=merge_dicts_recursively(
-                self.axis_config_d,
-                self.z_axis_config_d,
+                self.default_axis_config,
+                self.default_z_axis_config,
                 axis_config,
                 z_axis_config
             ),
@@ -605,11 +632,11 @@ class NumberPlane(Axes):
 
     points = CmptInfo(CmptVPoints_NumberPlaneImpl)
 
-    background_line_style_d = dict(
+    default_background_line_style = dict(
         stroke_color=BLUE_D,
         stroke_radius=0.01,
     )
-    axis_config_d = dict(
+    default_axis_config = dict(
         stroke_color=WHITE,
         stroke_radius=0.01,
         include_ticks=False,
@@ -617,9 +644,28 @@ class NumberPlane(Axes):
         line_to_number_buff=SMALL_BUFF,
         line_to_number_direction=DL
     )
-    y_axis_config_d = dict(
+    default_y_axis_config = dict(
         line_to_number_direction=DL,
         numbers_to_exclude=[0]
+    )
+
+    background_line_style_d = deprecated_classvar(
+        default_background_line_style,
+        'NumberPlane.background_line_style_d',
+        'NumberPlane.default_background_line_style',
+        remove=(4, 3)
+    )
+    axis_config_d = deprecated_classvar(
+        default_axis_config,
+        'NumberPlane.axis_config_d',
+        'NumberPlane.default_axis_config',
+        remove=(4, 3)
+    )
+    y_axis_config_d = deprecated_classvar(
+        default_y_axis_config,
+        'NumberPlane.y_axis_config_d',
+        'NumberPlane.default_y_axis_config',
+        remove=(4, 3)
     )
 
     def __init__(
@@ -637,10 +683,18 @@ class NumberPlane(Axes):
             y_range,
             **kwargs
         )
-        self.background_line_style = merge_dicts_recursively(self.background_line_style_d, background_line_style)
+        self.background_line_style = merge_dicts_recursively(self.default_background_line_style, background_line_style)
         self.faded_line_style = dict(faded_line_style)
         self.faded_line_ratio = faded_line_ratio
         self._init_background_lines()
+
+    @property
+    def background_lines(self) -> Group[Line]:
+        return self['background_lines']
+
+    @property
+    def faded_lines(self) -> Group[Line]:
+        return self['faded_lines']
 
     def _init_background_lines(self) -> None:
         if not self.faded_line_style:
@@ -655,15 +709,15 @@ class NumberPlane(Axes):
 
         x_lines1, x_lines2 = self.get_lines_parallel_to_axis(self.x_axis, self.y_axis)
         y_lines1, y_lines2 = self.get_lines_parallel_to_axis(self.y_axis, self.x_axis)
-        self.background_lines = Group(*x_lines1, *y_lines1)
-        self.faded_lines = Group(*x_lines2, *y_lines2)
+        background_lines = Group(*x_lines1, *y_lines1)
+        faded_lines = Group(*x_lines2, *y_lines2)
 
-        self.background_lines.set(**self.background_line_style)
-        self.faded_lines.set(**self.faded_line_style)
+        background_lines.set(**self.background_line_style)
+        faded_lines.set(**self.faded_line_style)
 
         self.add(
-            self.faded_lines,
-            self.background_lines,
+            faded_lines=faded_lines,
+            background_lines=background_lines,
             prepend=True
         )
         self.depth.arrange()
@@ -672,7 +726,7 @@ class NumberPlane(Axes):
         self,
         axis1: NumberLine,
         axis2: NumberLine
-    ) -> tuple[Group, Group]:
+    ) -> tuple[Group[Line], Group[Line]]:
         freq = axis2.x_step
         ratio = self.faded_line_ratio
         line = Line(axis1.points.get_start(), axis1.points.get_end())

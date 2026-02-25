@@ -37,7 +37,7 @@ gui = [
     "pyside6",
     "qdarkstyle",
     "beautifulsoup4",
-    "sounddevice>=0.5.5",
+    "sounddevice>=0.5.5; sys_platform == 'win32' or sys_platform == 'darwin'",
 ]
 doc = [
     "sphinx<9.0.0",
@@ -50,6 +50,7 @@ doc = [
 ]
 test = [
     "opencv-python",
+    "coverage"
 ]
 
 [tool.flit.sdist]
@@ -63,9 +64,6 @@ exclude = [
     "asv.conf.json",
     "**/*.ui",
     "janim/locale/source",
-    "janim/locale/compile.py",
-    "janim/locale/gettext.py",
-    "janim/locale/intl.py",
     "janim/locale/*/LC_MESSAGES/*.po"
 ]
 

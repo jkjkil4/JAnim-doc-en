@@ -15,7 +15,7 @@ from janim.anims.timeline import Timeline
 from janim.exception import GuiCommandError
 from janim.gui.utils import apply_popup_flags
 from janim.items.item import Item
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.utils.config import Config
 from janim.utils.file_ops import get_gui_asset
@@ -135,7 +135,10 @@ class HandlerPanel(QWidget):
 
     def close_and_rebuild_timeline(self) -> None:
         self.close()
-        QTimer.singleShot(0, self.viewer.on_rebuild_triggered)
+        # 没有 watch 的时候才另行触发 rebuild
+        # 避免和 watch 导致的 rebuild 重复
+        if self.viewer.watcher is None:
+            QTimer.singleShot(0, self.viewer.on_rebuild_triggered)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

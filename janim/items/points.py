@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools as it
 from typing import TYPE_CHECKING, Generic, Iterable, Self, TypeVar, overload
 
 import numpy as np
@@ -12,7 +13,7 @@ from janim.components.radius import Cmpt_Radius
 from janim.components.rgbas import Cmpt_Rgbas, apart_alpha
 from janim.exception import GetItemError
 from janim.items.item import Item
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.render.renderer_dotcloud import DotCloudRenderer
 from janim.typing import Alpha, ColorArray, JAnimColor, Vect
 from janim.utils.data import AlignedData
@@ -219,9 +220,16 @@ class NamedGroupMixin[T](Group[T]):
     另见 :class:`NamedGroup`
     """
     def __init__(self, *items: T, named: dict[str, T], **kwargs):
-        super().__init__(**kwargs)
-        self._named_indices: dict[str, int] = {}
-        self.add(*items, **named)
+        super().__init__(*items, *named.values(), **kwargs)
+        self._named_indices: dict[str, int] = {
+            name: len(items) + i
+            for i, name in enumerate(named)
+        }
+        # 相当于
+        # super().__init__(**kwargs)
+        # self._named_indices: dict[str, int] = {}
+        # self.add(*items, **named)
+        # 但是因为这样写是先传递 **kwargs 再 self.add，会导致 Item.set 因为没有子物件而忽略 kwargs 检查
 
     def add(self, *items: T, prepend=False, **named_items: T) -> Self:
         """
@@ -300,7 +308,9 @@ class NamedGroupMixin[T](Group[T]):
             for item_or_name in items_or_names
         ]
 
-        # 仿照删除物件的过程，更新 _named_indices
+        # 仿照删除物件的过程，更新 new_named_indices
+        new_named_indices = self._named_indices.copy()
+
         for obj in items:
             # 被删除的一个物件的下标
             try:
@@ -308,7 +318,7 @@ class NamedGroupMixin[T](Group[T]):
             except ValueError:
                 continue
 
-            # 更新 _named_indices：
+            # 更新 new_named_indices：
             # 遍历，如果 index 命中，则删除这一项；如果是在 index 之后的，则减一
             remove: str | None = None
             for key, value in self._named_indices.items():
@@ -316,11 +326,13 @@ class NamedGroupMixin[T](Group[T]):
                     assert remove is None
                     remove = key
                 if index < value:
-                    self._named_indices[key] = value - 1
+                    new_named_indices[key] -= 1
 
             if remove is not None:
                 del self._named_indices[remove]
+                del new_named_indices[remove]
 
+        self._named_indices = new_named_indices
         return super().remove(*items)
 
     def shuffle(self) -> Self:
@@ -338,6 +350,21 @@ class NamedGroupMixin[T](Group[T]):
             for key, obj in named_objs.items()
         }
         return self
+
+    def set_name(self, item: Item, name: str) -> Self:
+        """
+        设置一个已有的子物件的对应名称
+
+        :param item: 一个已有的子物件
+        :param name: 要设置的名称
+        """
+        index = self.index(item)
+        # 删除 _named_indices 中原先记录的 ? -> index
+        for key, value in self._named_indices.items():
+            if value == index:
+                del self._named_indices[key]
+                break   # 可以假设只存在一个，所以 break
+        self._named_indices[name] = index
 
     @overload
     def __getitem__(self, key: str) -> T: ...
@@ -373,6 +400,25 @@ class NamedGroupMixin[T](Group[T]):
             for key, value in self._named_indices.items()
         }
 
+    def _index_names(self) -> dict[int, str]:
+        """
+        具名子物件的下标到名称的对应关系，即 ``_named_indices`` 的反向字典
+        """
+        return {
+            index: name
+            for name, index in self._named_indices.items()
+        }
+
+    def children_with_name(self) -> list[tuple[T, str | None]]:
+        """
+        返回的列表中与子物件列表相似，但是每个元素是一个包含 ``(单个子物件, 其对应的名称)`` 的元组，如果不是具名子物件则名称为 ``None``
+        """
+        index_names = self._index_names()
+        return [
+            (item, index_names.get(i, None))
+            for i, item in enumerate(self._children)
+        ]
+
     # region 对 stored 的相关处理，不是什么很重要的细节
 
     def store(self):
@@ -393,6 +439,85 @@ class NamedGroupMixin[T](Group[T]):
 
     def get_named_indices(self) -> dict[str, int]:
         return self._stored_named_indices if self._stored else self._named_indices
+
+    # endregion
+
+    # region 对子物件 copy 和 become 的处理
+
+    def copy(self, *, root_only: bool = False):
+        copy_item = super().copy(root_only=root_only)
+        if root_only:
+            copy_item._named_indices = {}
+        else:
+            copy_item._named_indices = self._named_indices.copy()
+        return copy_item
+
+    def _children_become(self, other: Item, auto_visible: bool) -> None:
+        # 如果 other 不是具名物件组则按普通方式处理
+        if not isinstance(other, NamedGroupMixin):
+            super()._children_become(other, auto_visible)
+            return
+
+        self_children = self.children_with_name()
+        target_children = other.children_with_name()
+        common_names = self._named_indices.keys() & other._named_indices.keys()
+
+        def is_common(name: str | None) -> bool:
+            return name is not None and name in common_names
+
+        # 清空自身原有的 children
+        self.clear_children()
+
+        # 遍历 other 的子物件，依次在 self_children 中寻找来源物件
+        # 对于 other 的每个子物件：
+        # (1) 如果是共有的具名子物件，则在 self 中找到对应的具名子物件
+        # (2) 如果不是共有的具名子物件，则寻找 self 中的第一个不是共有的具名子物件
+        src_children: list[Item | None] = []
+        for _, target_name in target_children:
+            # 如果 other_children 空了则直接停止寻找来源物件
+            if not self_children:
+                break
+
+            # 寻找来源物件
+            is_target_name_common = is_common(target_name)
+            src_idx = None
+            for i, (_, self_name) in enumerate(self_children):
+                if is_target_name_common:
+                    # (1)
+                    if self_name == target_name:
+                        src_idx = i
+                        break
+                else:
+                    # (2)
+                    if not is_common(self_name):
+                        src_idx = i
+                        break
+
+            # 如果 source_idx 非 None，则从 self_children 中 pop
+            if src_idx is not None:
+                src_item = self_children.pop(src_idx)[0]
+            else:
+                src_item = None
+
+            src_children.append(src_item)
+
+        # 辅助函数
+        def add(item: Item, name: str | None) -> None:
+            if name is None:
+                self.add(item)
+            else:
+                self.add(**{name: item})
+
+        # 根据配对结果处理子物件
+        # 处理逻辑和普通方式会有点像
+        for src, target in it.zip_longest(src_children, target_children):
+            assert target is not None
+            target_item, target_name = target
+
+            if src is None or type(src) is not type(target_item):
+                add(target_item, target_name)
+            else:
+                add(src.become(target_item), target_name)
 
     # endregion
 

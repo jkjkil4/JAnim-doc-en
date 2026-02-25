@@ -13,7 +13,7 @@ from typing import Callable
 from janim.anims.timeline import BuiltTimeline, Timeline
 from janim.exception import (EXITCODE_MODULE_NOT_FOUND, EXITCODE_NOT_FILE,
                              ExitException)
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.utils.config import cli_config, default_config
 from janim.utils.file_ops import STDIN_FILENAME, open_file
@@ -282,6 +282,14 @@ def get_module_from_stdin():
     module_name = '__janim_main__'
     module = types.ModuleType(module_name)
     module.__file__ = STDIN_FILENAME
+
+    # 让 inspect.getsourcelines 能从 linecache 读取 stdin 源码
+    linecache.cache[STDIN_FILENAME] = (
+        len(source),
+        None,
+        [line + '\n' for line in source.splitlines()],
+        STDIN_FILENAME
+    )
 
     sys.modules[module_name] = module
 

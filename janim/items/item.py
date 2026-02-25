@@ -15,7 +15,7 @@ from janim.components.component import CmptInfo, Component, _CmptGroup
 from janim.components.depth import Cmpt_Depth
 from janim.exception import AsTypeError, GetItemError
 from janim.items.relation import Relation
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.render.base import Renderer
 from janim.typing import SupportsApartAlpha
@@ -25,6 +25,7 @@ from janim.utils.paths import PathFunc, straight_path
 from janim.utils.signal import SIGNAL_OBJ_SLOTS_NAME
 
 if TYPE_CHECKING:
+    from janim.anims.timeline import Timeline
     from janim.items.points import Group
 
 _ = get_translator('janim.items.item')
@@ -145,7 +146,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
         self._depth_test = False
         self._distance_sort = False
 
-        self._saved_states: dict[str, Item.SavedState[Self]] = {}
+        self.reset_additional_states()
 
         self._init_components()
 
@@ -157,6 +158,10 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
     def init_connect(self) -> None:
         pass
+
+    def reset_additional_states(self) -> None:
+        self._saved_states: dict[str, Item.SavedState[Self]] = {}
+        self.target: Self | None = None
 
     def _init_components(self) -> None:
         """
@@ -664,6 +669,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         copy_item._parents = []
         copy_item._children = []
+        copy_item.reset_additional_states()
 
         if root_only:
             copy_item._children_changed()
@@ -684,16 +690,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
             force_detect_items = set(self.walk_self_and_descendants())
 
         # self.parents 不变
-
-        children = self._children.copy()
-        self.clear_children()
-        for old, new in it.zip_longest(children, other._children):
-            if new is None:
-                break
-            if old is None or type(old) is not type(new):
-                self.add(new.copy())
-            else:
-                self.add(old.become(new, auto_visible=auto_visible))
+        self._children_become(other, auto_visible)
 
         for key in self.components.keys() | other.components.keys():
             self.components[key].become(other.components[key])
@@ -716,6 +713,17 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         return self
 
+    def _children_become(self, other: Item, auto_visible: bool) -> None:
+        children = self._children.copy()
+        self.clear_children()
+        for old, new in it.zip_longest(children, other._children):
+            if new is None:
+                break
+            if old is None or type(old) is not type(new):
+                self.add(new.copy())
+            else:
+                self.add(old.become(new, auto_visible=auto_visible))
+
     def store(self):
         copy_item = copy.copy(self)
         copy_item.reset_refresh()
@@ -723,6 +731,7 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
 
         copy_item._parents = []
         copy_item._children = []
+        copy_item.reset_additional_states()
 
         copy_item._stored = True
         copy_item._stored_parents = self.get_parents().copy()
@@ -943,9 +952,9 @@ class Item(Relation['Item'], metaclass=_ItemMeta):
     def create_renderer(self) -> Renderer:
         return self.renderer_cls()
 
-    def _mark_render_disabled(self) -> None:
+    def _mark_render_disabled(self, additionals: list[Timeline.AdditionalRenderCallsCallback]) -> None:
         """
-        由子类继承，用于标记 _render_disabled
+        由子类继承，用于给所影响到的对象标记 ``_render_disabled``
 
         详见 :meth:`~.Timeline.render_all` 中的注释
         """

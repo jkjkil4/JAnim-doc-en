@@ -16,11 +16,12 @@ from janim.anims.composition import AnimGroup
 from janim.anims.fading import FadeIn, FadeInFromPoint, FadeOut, FadeOutToPoint
 from janim.components.points import Cmpt_Points
 from janim.constants import C_LABEL_ANIM_STAY, OUT
+from janim.exception import TargetNotFoundError
 from janim.items.item import Item
 from janim.items.points import Points
 from janim.items.text import Text, TextChar, TextLine
 from janim.items.vitem import VItem
-from janim.locale.i18n import get_translator
+from janim.locale import get_translator
 from janim.logger import log
 from janim.typing import Vect
 from janim.utils.data import AlignedData
@@ -88,7 +89,8 @@ class Transform(Animation):
         ]
         self.timeline.add_additional_render_calls_callback(
             self.t_range,
-            lambda: self.additional_calls
+            lambda: self.additional_calls,
+            [self.src_item, self.target_item]
         )
 
         # 在动画开始时自动隐藏源对象，在动画结束时自动显示目标对象
@@ -180,6 +182,11 @@ class MoveToTarget(Transform):
     """
 
     def __init__(self, item: Item, **kwargs):
+        if item.target is None:
+            raise TargetNotFoundError(
+                _('You must use `.generate_target` to generate the target item '
+                  'before using `MoveToTarget` to create animation')
+            )
         super().__init__(
             item,
             item.target,
@@ -629,19 +636,46 @@ class TransformMatchingDiff(AnimGroup):
 
         return True
 
+    _map_to_hash_id: dict[int, int] = {}
+    _next_hash_id = 0
+
     @dataclass
     class MatchWrapper:
         item: VItem
+        hash_id: int
 
         def __eq__(self, other: TransformMatchingDiff.MatchWrapper):
-            return self.item.points.same_shape(other.item)
+            return self.hash_id == other.hash_id
 
         def __hash__(self):
-            return self.item.points.identity[0]
+            return self.hash_id
 
         @classmethod
         def from_iterable(cls, iterable: Iterable):
-            return [cls(x) for x in iterable]
+            return [cls(x, cls.get_hash_id(x)) for x in iterable]
+
+        @staticmethod
+        def get_hash_id(x: VItem) -> int:
+            """
+            将 identity 的一组 hash 化归为单一 hash_id
+            """
+            map = TransformMatchingDiff._map_to_hash_id
+            hashes = x.points.identity[0][:1]
+
+            hash_id: int | None = None
+            for h in hashes:
+                recorded = map.get(h, None)
+                if recorded is not None:
+                    hash_id = recorded
+                    break
+
+            if hash_id is None:
+                hash_id = TransformMatchingDiff._next_hash_id
+                TransformMatchingDiff._next_hash_id += 1
+
+            for h in hashes:
+                map[h] = hash_id
+            return hash_id
 
     @dataclass
     class CharMatchWrapper(MatchWrapper):
