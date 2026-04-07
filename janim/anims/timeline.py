@@ -5,6 +5,7 @@ import inspect
 import itertools as it
 import math
 import os
+import sys
 import time
 import traceback
 import types
@@ -34,7 +35,8 @@ from janim.constants import (BLACK, DEFAULT_DURATION, DOWN, FOREVER,
 from janim.exception import TimelineLookupError
 from janim.items.audio import Audio
 from janim.items.item import Item
-from janim.items.points import Group, Point
+from janim.items.group import Group
+from janim.items.points import Point
 from janim.items.shape_matchers import SurroundingRect
 from janim.items.svg.typst import TypstText
 from janim.items.text import Text
@@ -578,6 +580,10 @@ class Timeline(metaclass=ABCMeta):
                 subtitle = TypstText(text, **kwargs)
             else:
                 subtitle = Text(text, font=font, **kwargs)
+            is_null = all(item.is_null() for item in subtitle.walk_self_and_descendants())
+            if is_null:
+                continue
+
             subtitle.points.scale(scale * base_scale)
             self.place_subtitle(subtitle, range)
             self.subtitle_infos.append(Timeline.SubtitleInfo(text, range, kwargs, subtitle))
@@ -936,6 +942,94 @@ class SourceTimeline(Timeline):
         return super().build(quiet=quiet, hide_subtitles=hide_subtitles, show_debug_notice=show_debug_notice)
 
 
+class ListedTimelines(Timeline):
+    """
+    指定一组 :class:`Timeline` 实现，将他们依次播放
+
+    示例：
+
+    .. code-block:: python
+
+        class Section0(Timeline):
+            def construct(self):
+                ...
+
+        class Section1(Timeline):
+            def construct(self):
+                ...
+
+        class Section2(Timeline):
+            def construct(self):
+                ...
+
+        class Sections(ListedTimelines):
+            includes = [Section1, Section2]
+    """
+    includes: list[type[Timeline]] = []
+
+    def construct(self):
+        """"""
+        for cls in self.includes:
+            tl = cls().build().to_item().show()
+            self.forward(tl.duration)
+
+
+class AboveTimelines(ListedTimelines):
+    """
+    依次播放在同文件中先前定义过的所有 :class:`Timeline` 实现
+
+    示例：
+
+    .. code-block:: python
+
+        class Section0(Timeline):
+            def construct(self):
+                ...
+
+        class Section1(Timeline):
+            def construct(self):
+                ...
+
+        class Section2(Timeline):
+            def construct(self):
+                ...
+
+        class Sections(AboveTimelines):
+            pass
+
+    可另外使用 ``excludes`` 指定排除项
+
+    示例：
+
+    .. code-block:: python
+
+        ...
+
+        class Sections(AboveTimelines):
+            excludes = [Section0]
+    """
+    excludes: list[type[Timeline]] = []
+
+    def construct(self):
+        """"""
+        from janim.cli import get_all_timelines_from_module
+
+        module = sys.modules[self.__class__.__module__]
+        timelines = get_all_timelines_from_module(module)
+
+        includes = []
+
+        for cls in timelines:
+            if cls is self.__class__:
+                break
+            if cls in self.excludes:
+                continue
+            includes.append(cls)
+
+        self.includes = includes
+        super().construct()
+
+
 class BuiltTimeline:
     """
     运行 :meth:`Timeline.build` 后返回的实例
@@ -1026,8 +1120,15 @@ class BuiltTimeline:
 
         return result
 
-    def current_camera_info(self) -> CameraInfo:
-        return self.timeline.compute_item(self.timeline.camera, self._time, True).points.info
+    def current_camera_info(self, *, as_time: float | None = None) -> CameraInfo:
+        """
+        得到当前的 :class:`~.CameraInfo` 信息
+
+        这里“当前”的含义是，上次调用 :meth:`render_all` 的 ``global_t`` 时刻；或者也可以传入 ``as_time`` 指定
+        """
+        if as_time is None:
+            as_time = self._time
+        return self.timeline.compute_item(self.timeline.camera, as_time, True).points.info
 
     def render_all(
         self,
