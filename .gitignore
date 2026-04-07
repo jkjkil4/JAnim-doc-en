@@ -7,6 +7,9 @@
 /doc/source/locales/*
 !/doc/source/locales/en
 
+!/test
+/test/examples/ref
+
 !/.gitignore
 !/.readthedocs.yaml
 !/pyproject.toml
