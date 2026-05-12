@@ -1,0 +1,50 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2023, jkjkil4
+# This file is distributed under the same license as the JAnim package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: JAnim \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 1980-01-01 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.17.0\n"
+
+#: ../../source/janim/render/profiler.rst:2
+msgid "profiler"
+msgstr "profiler"
+
+#: janim.render.profiler.RenderProfiler:1 of
+msgid "性能分析器"
+msgstr "Performance Profiler"
+
+#: janim.render.profiler.RenderProfiler:3 of
+msgid "用于 patch 物件渲染，统计物件渲染的耗时与性能"
+msgstr "Used to patch item rendering and collect timing and performance statistics"
+
+#: ../../source/janim/render/profiler.rst
+msgid "参数"
+msgstr "Parameters"
+
+#: janim.render.profiler.RenderProfiler:5 of
+msgid "用于接收结果的回调函数，接收一个 :class:`FrameRecord` 参数"
+msgstr "Callback used to receive results, taking a :class:`FrameRecord` argument"
+
+#: janim.render.profiler.RenderProfiler.record_frame:1 of
+msgid "在渲染顶层入口 ``with`` 该函数，统计内部代码块的物件用时，并将结果传递给 ``callback`` 回调"
+msgstr ""
+"Use this function in a top-level rendering ``with`` block to measure the time spent on items in the inner code block and "
+"pass the result to the ``callback``"
+
+#: janim.render.profiler.FrameRecord:1 of
+msgid "各个种类物件在单帧中的耗时统计"
+msgstr "Timing statistics for each kind of item within a single frame"

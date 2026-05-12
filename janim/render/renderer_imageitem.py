@@ -6,7 +6,6 @@ import moderngl as mgl
 import numpy as np
 
 from janim.render.base import Renderer
-from janim.render.framebuffer import FRAME_BUFFER_BINDING
 from janim.render.program import get_program_from_file_prefix
 from janim.render.texture import get_texture_from_img
 
@@ -28,19 +27,25 @@ class ImageItemRenderer(Renderer):
         self.vbo_points = self.ctx.buffer(reserve=4 * 3 * 4)
         self.vbo_color = self.ctx.buffer(reserve=4 * 4 * 4)
         self.vbo_texcoords = self.ctx.buffer(
-            data=np.array([
-                [0.0, 0.0],     # 左上
-                [0.0, 1.0],     # 左下
-                [1.0, 0.0],     # 右上
-                [1.0, 1.0]      # 右下
-            ], dtype=np.float32).tobytes()
+            data=np.array(
+                [
+                    [0.0, 0.0],  # 左上
+                    [0.0, 1.0],  # 左下
+                    [1.0, 0.0],  # 右上
+                    [1.0, 1.0],  # 右下
+                ],
+                dtype=np.float32,
+            ).tobytes()
         )
 
-        self.vao = self.ctx.vertex_array(self.prog, [
-            (self.vbo_points, '3f', 'in_point'),
-            (self.vbo_color, '4f', 'in_color'),
-            (self.vbo_texcoords, '2f', 'in_texcoord')
-        ])
+        self.vao = self.ctx.vertex_array(
+            self.prog,
+            [
+                (self.vbo_points, '3f', 'in_point'),
+                (self.vbo_color, '4f', 'in_color'),
+                (self.vbo_texcoords, '2f', 'in_texcoord'),
+            ],
+        )
 
         self.prev_points = None
         self.prev_color = None
@@ -76,11 +81,6 @@ class ImageItemRenderer(Renderer):
         self.texture.filter = item.image.get_filter()
         self.texture.use(0)
         self.update_fix_in_frame(self.u_fix, item)
-
-        # 我不知道为啥得在这里重新绑定一遍才能奏效，但是 it works ¯\_(ツ)_/¯
-        if self.ctx.fbo.color_attachments is not None:
-            self.prog['JA_FRAMEBUFFER'] = FRAME_BUFFER_BINDING
-            self.ctx.fbo.color_attachments[0].use(FRAME_BUFFER_BINDING)
 
         with self.depth_test_if_enabled(self.ctx, item):
             self.vao.render(mgl.TRIANGLE_STRIP)

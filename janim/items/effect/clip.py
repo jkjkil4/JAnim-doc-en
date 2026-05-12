@@ -21,14 +21,13 @@ from janim.utils.bezier import interpolate
 from janim.utils.config import Config
 from janim.utils.data import AlignedData
 
-frameclip_fragment_shader = '''
+frameclip_fragment_shader = """
 #version 330 core
 
 in vec2 v_texcoord;
 
 out vec4 f_color;
 
-uniform sampler2D fbo;
 uniform vec4 u_clip;    // left top right bottom
 uniform bool u_debug;
 
@@ -48,11 +47,11 @@ void main()
         }
     }
 
-    f_color = texture(fbo, v_texcoord);
+    f_color = frame_texture(v_texcoord);
 
     #[JA_FINISH_UP]
 }
-'''
+"""
 
 
 class Cmpt_FrameClip[ItemT](Component[ItemT]):
@@ -84,7 +83,7 @@ class Cmpt_FrameClip[ItemT](Component[ItemT]):
         self,
         p,
         left=None, top=None, right=None, bottom=None,
-    ):
+    ):  # fmt: skip
         self.set(
             *(
                 v if v is not None else interpolate(self._attrs[i], v, p.alpha)
@@ -123,14 +122,14 @@ class FrameClip(FrameEffect):
         clip: tuple[float, float, float, float] = (0, 0, 0, 0),
         debug: bool = False,
         root_only: bool = False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             *items,
             fragment_shader=frameclip_fragment_shader,
             cache_key='frameclip',
             root_only=root_only,
-            **kwargs
+            **kwargs,
         )
 
         self.apply_uniforms(u_debug=debug)
@@ -151,14 +150,13 @@ class FrameClip(FrameEffect):
         return Rect(p1, p2, **kwargs)
 
 
-transformable_frameclip_fragment_shader = '''
+transformable_frameclip_fragment_shader = """
 #version 330 core
 
 in vec2 v_texcoord;
 
 out vec4 f_color;
 
-uniform sampler2D fbo;
 uniform vec4 u_clip;    // left top right bottom
 uniform vec2 u_offset;  // x, y
 uniform vec2 u_scale;   // x, y
@@ -208,11 +206,11 @@ void main()
         }
     }
 
-    f_color = texture(fbo, uv);
+    f_color = frame_texture(uv);
 
     #[JA_FINISH_UP]
 }
-'''
+"""
 
 
 class Cmpt_Attrs[ItemT](Component[ItemT]):
@@ -239,7 +237,9 @@ class Cmpt_Attrs[ItemT](Component[ItemT]):
         return np.all(self._attrs == other._attrs)
 
     @classmethod
-    def align_for_interpolate(cls, cmpt1: Cmpt_TransformableFrameClip, cmpt2: Cmpt_TransformableFrameClip):
+    def align_for_interpolate(
+        cls, cmpt1: Cmpt_TransformableFrameClip, cmpt2: Cmpt_TransformableFrameClip
+    ):
         return AlignedData(cmpt1.copy(), cmpt2.copy(), cmpt1.copy())
 
     def interpolate(self, cmpt1: Self, cmpt2: Self, alpha: float, *, path_func=None) -> None:
@@ -257,15 +257,17 @@ class Cmpt_TransformableFrameClip[ItemT](Cmpt_Attrs[ItemT], impl=True):
         x_scale=None, y_scale=None,
         rotate=None,
         *,
-        scale=None
-    ):
+        scale=None,
+    ):  # fmt: skip
         if scale is not None:
             x_scale = y_scale = scale
 
         self.set(
             *(
                 v if v is None else interpolate(self._attrs[i], v, p.alpha)
-                for i, v in enumerate((left, top, right, bottom, x_offset, y_offset, x_scale, y_scale, rotate))
+                for i, v in enumerate(
+                    (left, top, right, bottom, x_offset, y_offset, x_scale, y_scale, rotate)
+                )
             )
         )
 
@@ -282,12 +284,14 @@ class Cmpt_TransformableFrameClip[ItemT](Cmpt_Attrs[ItemT], impl=True):
         y_scale: float | None = None,
         rotate: float | None = None,
         *,
-        scale: float | None = None
+        scale: float | None = None,
     ) -> Self:
         if scale is not None:
             x_scale = y_scale = scale
 
-        for i, v in enumerate((left, top, right, bottom, x_offset, y_offset, x_scale, y_scale, rotate)):
+        for i, v in enumerate(
+            (left, top, right, bottom, x_offset, y_offset, x_scale, y_scale, rotate)
+        ):
             if v is not None:
                 self._attrs[i] = v
 
@@ -318,7 +322,7 @@ class TransformableFrameClip(FrameEffect):
         rotate: float = 0,
         debug: bool = False,
         root_only: bool = False,
-        **kwargs
+        **kwargs,
     ):
         if isinstance(scale, numbers.Real):
             scale = (scale, scale)
@@ -328,7 +332,7 @@ class TransformableFrameClip(FrameEffect):
             fragment_shader=transformable_frameclip_fragment_shader,
             cache_key='transformable_frameclip',
             root_only=root_only,
-            **kwargs
+            **kwargs,
         )
 
         self.apply_uniforms(u_debug=debug)
@@ -339,7 +343,7 @@ class TransformableFrameClip(FrameEffect):
             u_clip=self.clip._attrs[:4],
             u_offset=self.clip._attrs[4:6],
             u_scale=self.clip._attrs[6:8],
-            u_rotate=self.clip._attrs[8]
+            u_rotate=self.clip._attrs[8],
         )
 
     def create_border_rect(self, **kwargs) -> Rect:
@@ -354,19 +358,23 @@ class TransformableFrameClip(FrameEffect):
         p2 = dl + [width * (1 - right), height * (1 - top), 0]
 
         rect = Rect(p1, p2, **kwargs)
-        rect.points.shift([width * x_offset, height * y_offset, 0]).scale([x_scale, y_scale, 1]).rotate(rotate)
+        # fmt: off
+        rect.points \
+            .shift([width * x_offset, height * y_offset, 0]) \
+            .scale([x_scale, y_scale, 1]) \
+            .rotate(rotate)
+        # fmt: on
 
         return rect
 
 
-rectclip_fragment_shader = '''
+rectclip_fragment_shader = """
 #version 330 core
 
 in vec2 v_texcoord;
 
 out vec4 f_color;
 
-uniform sampler2D fbo;
 uniform vec2 JA_FRAME_RADIUS;
 uniform vec2 u_anchor;
 uniform vec2 u_orig;
@@ -419,11 +427,11 @@ void main()
     if (texcoord.x < 0.0 || texcoord.x > 1.0 || texcoord.y < 0.0 || texcoord.y > 1.0)
         discard;
 
-    f_color = texture(fbo, texcoord);
+    f_color = frame_texture(texcoord);
 
     #[JA_FINISH_UP]
 }
-'''
+"""
 
 
 class Cmpt_RectClipTransform[ItemT](Cmpt_Attrs[ItemT], impl=True):
@@ -519,13 +527,13 @@ class RectClip(FrameEffect, FrameRect):
         scale: float = 1,
         rotate: float = 0,
         border: bool = False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             *items,
             fragment_shader=rectclip_fragment_shader,
             cache_key='rectclip',
-            **kwargs
+            **kwargs,
         )
         self._border = border
         self.set_anchor(anchor)

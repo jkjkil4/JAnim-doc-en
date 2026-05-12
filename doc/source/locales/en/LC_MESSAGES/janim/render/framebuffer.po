@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: JAnim \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-04-05 16:52+0800\n"
+"POT-Creation-Date: 1980-01-01 00:00+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -22,3 +22,13 @@ msgstr ""
 #: ../../source/janim/render/framebuffer.rst:2
 msgid "framebuffer"
 msgstr "framebuffer"
+
+#: janim.render.framebuffer.qt_framebuffer_patch:1 of
+msgid "自动在 with 前获取 GL 对象，在 with 后重设 GL 对象（如果是 Qt 的 Framebuffer），以保证与 Qt 的兼容"
+msgstr ""
+"Automatically obtains the GL object before ``with`` and resets it after ``with`` (if it is a Qt Framebuffer), to ensure "
+"compatibility with Qt"
+
+#: janim.render.framebuffer.FrameBuffer.unpremultiply:1 of
+msgid "将当前 FBO 的 PMA 内容通过 GPU pass 转为 straight alpha，结果写回自身"
+msgstr "Convert the current FBO's PMA content to straight alpha via GPU pass; write the result back"

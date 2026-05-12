@@ -1,4 +1,3 @@
-
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -12,7 +11,7 @@ uniforms_map: dict[mgl.Context, ContextVar[dict]] = {}
 def get_uniforms_context_var(ctx: mgl.Context) -> ContextVar[dict]:
     ctxvar = uniforms_map.get(ctx, None)
     if ctxvar is None:
-        ctxvar = uniforms_map[ctx] = ContextVar(f'uniforms_{id(ctx)}', default=dict(JA_BLENDING=False))
+        ctxvar = uniforms_map[ctx] = ContextVar(f'uniforms_{id(ctx)}', default={})
     return ctxvar
 
 
@@ -28,18 +27,19 @@ def apply_uniforms(prog: mgl.Program | mgl.ComputeShader, uniforms: dict | None 
 def uniforms(ctx: mgl.Context, **kwargs):
     ctxvar = get_uniforms_context_var(ctx)
 
-    old_value = ctxvar.get()
-    new_value = old_value.copy()
-    new_value.update(kwargs)
-    diff = {
-        key: old_value[key]
-        for key in new_value.keys() & old_value.keys()
+    old_uniforms = ctxvar.get()
+    new_uniforms = old_uniforms.copy()
+    new_uniforms.update(kwargs)
+
+    reset_uniforms = {
+        key: old_uniforms[key]  #
+        for key in new_uniforms.keys() & old_uniforms.keys()
     }
 
     for prog in get_programs(ctx):
         apply_uniforms(prog, kwargs)
 
-    token = ctxvar.set(new_value)
+    token = ctxvar.set(new_uniforms)
 
     try:
         yield
@@ -47,4 +47,4 @@ def uniforms(ctx: mgl.Context, **kwargs):
         ctxvar.reset(token)
 
         for prog in get_programs(ctx):
-            apply_uniforms(prog, diff)
+            apply_uniforms(prog, reset_uniforms)

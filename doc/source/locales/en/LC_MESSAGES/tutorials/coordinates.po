@@ -6,19 +6,18 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: JAnim\n"
+"Project-Id-Version:  JAnim\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-22 21:20+0800\n"
+"POT-Creation-Date: 1980-01-01 00:00+0000\n"
 "PO-Revision-Date: 2025-11-22 22:18+0800\n"
 "Last-Translator: \n"
-"Language-Team: en <LL@li.org>\n"
 "Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "Generated-By: Babel 2.17.0\n"
-"X-Generator: Poedit 3.8\n"
 
 #: ../../source/tutorials/coordinates.rst:2
 msgid "坐标系统"
@@ -26,7 +25,7 @@ msgstr "Coordinate System"
 
 #: ../../source/tutorials/coordinates.rst:4
 msgid ""
-"JAnim 的坐标系统不以像素为单位，而是采用水平方向约 ``-7.11 ~ 7.11``，垂直方向 ``-4 ~ 4`` 的坐标范围，形成一个 16:9 的画"
+"JAnim 的坐标系统不以像素为单位，而是采用水平方向约 ``-7.11 ~ 7.11`` ，垂直方向 ``-4 ~ 4`` 的坐标范围，形成一个 16:9 的画"
 "面。"
 msgstr ""
 "JAnim's coordinate system is not in pixels, but uses a coordinate range of approximately ``-7.11 ~ 7.11`` horizontally "
@@ -64,8 +63,8 @@ msgstr "This note will not be repeated for similar cases"
 
 #: ../../source/tutorials/coordinates.rst:26
 msgid ""
-"在之前的简要介绍中，我们提到 JAnim 的几何 **物件** 含有多个 **组件**，包括 ``points``、 ``stroke``、 ``fill`` 等； 而其中"
-"与坐标系统相关的组件是 ``points``，它决定了物件的形状和位置。"
+"在之前的简要介绍中，我们提到 JAnim 的几何 **物件** 含有多个 **组件** ，包括 ``points`` 、 ``stroke`` 、 ``fill`` 等； 而其"
+"中与坐标系统相关的组件是 ``points`` ，它决定了物件的形状和位置。"
 msgstr ""
 "In the previous brief introduction, we mentioned that JAnim's geometric **items** contain multiple **components**, "
 "including ``points``, ``stroke``, ``fill``, etc.; among them, the component related to the coordinate system is "
@@ -178,7 +177,7 @@ msgstr ""
 
 #: ../../source/tutorials/coordinates.rst:80
 msgid ""
-"例如，上面提到的 ``.move_to(RIGHT * 3 + UP * 2)`` 等效于 ``.move_to([3, 2, 0])``，也就是将物件移动到 ``[3, 2, 0]`` 的位"
+"例如，上面提到的 ``.move_to(RIGHT * 3 + UP * 2)`` 等效于 ``.move_to([3, 2, 0])`` ，也就是将物件移动到 ``[3, 2, 0]`` 的位"
 "置。"
 msgstr ""
 "For example, the aforementioned ``.move_to(RIGHT * 3 + UP * 2)`` is equivalent to ``.move_to([3, 2, 0])``, which moves "
@@ -197,8 +196,8 @@ msgid "但在大多数情况下，我们只需要关注前两个坐标轴（x �
 msgstr "But in most cases, we only need to focus on the first two coordinate axes (x and y), and set the z-axis to 0."
 
 #: ../../source/tutorials/coordinates.rst:88
-msgid "关于三维坐标的更多内容，可以参考 :ref:`3d_coordinates`。"
-msgstr "For more information about three-dimensional coordinates, refer to :ref:`3d_coordinates`."
+msgid "关于三维坐标的更多内容，可以参考 :ref:`3d_scene`。"
+msgstr "For more information about three-dimensional coordinates, refer to :ref:`3d_scene`."
 
 #: ../../source/tutorials/coordinates.rst:93
 msgid "相对放置"
@@ -455,8 +454,8 @@ msgid "``about_edge``"
 msgstr "``about_edge``"
 
 #: ../../source/tutorials/coordinates.rst:224
-msgid "表示缩放或旋转时的参考边缘，默认为 ``ORIGIN``，即物件的中心点。"
-msgstr "Represents the reference edge when scaling or rotating. Default is ``ORIGIN``, i.e., the center point of the item."
+msgid "表示缩放或旋转时的参考边缘，默认为 ``ORIGIN`` ，即物件的中心点。"
+msgstr "Represents the reference edge when scaling or rotating. The default is ``ORIGIN``, i.e. the item's center."
 
 #: ../../source/tutorials/coordinates.rst:226
 msgid ""
@@ -472,10 +471,10 @@ msgid "``about_point``"
 msgstr "``about_point``"
 
 #: ../../source/tutorials/coordinates.rst:230
-msgid "表示缩放或旋转时的参考点，默认为 ``None``，会根据 ``about_edge`` 取参考点，即默认以物件的中心；"
+msgid "表示缩放或旋转时的参考点，默认为 ``None`` ，会根据 ``about_edge`` 取参考点，即默认以物件的中心；"
 msgstr ""
 "Represents the reference point when scaling or rotating. Default is ``None``, which will take the reference point based "
-"on ``about_edge``, i.e., defaults to the center of the item;"
+"on ``about_edge``, i.e. the item's center by default;"
 
 #: ../../source/tutorials/coordinates.rst:232
 msgid "可以设置为某个点，表示以全局坐标中的该点为参考点。"
@@ -503,10 +502,10 @@ msgstr ""
 
 #: ../../source/tutorials/coordinates.rst:18
 msgid ""
-"前者是 ``poly`` 的组件动画，本质上是对操作前后的 ``poly`` 的 **插值效果**，是直线变换而非弧线移动，并没有真正的旋转效果；"
+"前者是 ``poly`` 的组件动画，本质上是对操作前后的 ``poly`` 的 **插值效果** ，是直线变换而非弧线移动，并没有真正的旋转效果；"
 msgstr ""
 "The former is a component animation of ``poly``, essentially an **interpolation effect** of ``poly`` before and after the "
-"operation. It's a linear transformation rather than arc movement, and doesn't have a true rotation effect;"
+"operation. It is a linear transformation rather than arc movement, and does not have a true rotation effect;"
 
 #: ../../source/tutorials/coordinates.rst:20
 msgid "而后者 :class:`~.Rotate` 作为专门的一个动画类，使得物件沿着圆弧路径旋转，产生真正的旋转效果。"
