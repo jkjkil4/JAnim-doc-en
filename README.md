@@ -1,3 +1,80 @@
-**不要在该仓库中作出更改，请移步 [JAnim](https://github.com/jkjkil4/JAnim)**
+在改进了 Read the Docs 部署流程后，该 repo 已弃用，如下是 JAnim 中原有的 workflow 仅作留档参考
 
-**Do not make changes in this repo, please see [JAnim](https://github.com/jkjkil4/JAnim)**
+```yaml
+name: Push docs (en)
+
+on:
+  push:
+    branches:
+    - docs-en
+
+jobs:
+  push-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Update .gitignore
+      run: |
+        cat <<EOF > .gitignore
+        /*
+        !/doc
+        !/janim
+
+        /doc/build
+
+        /doc/source/locales/*
+        !/doc/source/locales/en
+
+        !/.gitignore
+        !/.readthedocs.yaml
+        !/pyproject.toml
+
+        __pycache__
+        EOF
+
+    - name: Debug .gitignore
+      run: cat .gitignore
+
+    - name: Setup SSH
+      env:
+        PRIVATE_KEY: ${{ secrets.PRIVATE_KEY_DOC_EN }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add remote and reset to it
+      run: |
+        git remote add doc-en git@github.com:jkjkil4/JAnim-doc-en.git
+        git fetch doc-en --depth 1
+        git reset remotes/doc-en/docs
+
+    - name: Debug remotes
+      run: git remote -v
+
+    - name: Debug branches
+      run: git branch -a
+
+    - name: Add files and reset README.md
+      run: |
+        git add .
+        git reset -q README.md
+
+    - name: Debug status
+      run: git status
+
+    - name: Check changes
+      run: |
+        if git diff --cached --exit-code; then
+          echo "No changes staged, exit with code 0"
+          exit 0
+        fi
+
+    - name: Commit and push
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -m "Sync JAnim"
+        git push doc-en docs-en:refs/heads/docs
+```
